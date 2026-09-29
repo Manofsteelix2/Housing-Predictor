@@ -1,0 +1,11 @@
+{
+  "target": "MARKETVAL",
+  "numeric_features": [
+    "UNITSIZE",
+    "BEDROOMS",
+    "BATHROOMS",
+    "YRBUILT",
+    "LOTSIZE"
+  ],
+  "categorical_features": []
+}
