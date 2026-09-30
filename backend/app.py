@@ -1,0 +1,161 @@
+"""Flask API for the saved housing regression pipeline."""
+
+import json
+import hashlib
+import math
+from numbers import Real
+from pathlib import Path
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import joblib
+import pandas as pd
+from model_settings import load_config, read_dataset, default_feature_schema
+from werkzeug.exceptions import BadRequest, UnsupportedMediaType
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+
+
+def create_app():
+    app = Flask(__name__)
+    CORS(app)  # Allow the future frontend to call this API from another origin.
+
+    # Load configuration and the complete fitted pipeline once, at startup.
+    config = load_config(BACKEND_DIR / "model_config.json")
+    numeric = config["numeric_features"]
+    categorical = config["categorical_features"]
+    if any(not isinstance(group, list) or any(
+        not isinstance(name, str) or not name.strip() for name in group
+    ) for group in (numeric, categorical)):
+        raise ValueError("Feature configuration must contain lists of column names.")
+    predictors = config["predictors"]
+    if not predictors or len(predictors) != len(set(predictors)):
+        raise ValueError("Configure at least one predictor, with no duplicate names.")
+    model_path = BACKEND_DIR / "model.pkl"
+    model = joblib.load(model_path)
+    if getattr(model, "training_metadata_", {}).get("config") != config:
+        raise ValueError("Dataset-derived settings differ from the saved model. Retrain before starting the API.")
+    model_sha256 = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    preprocessing = model.named_steps["preprocessor"]
+    if list(preprocessing.feature_names_in_) != predictors:
+        raise ValueError("Configured predictors differ from model.pkl. Retrain before starting the API.")
+    for name, columns in (("numeric", numeric), ("categorical", categorical)):
+        trained_columns = next(cols for key, _, cols in preprocessing.transformers_ if key == name)
+        if list(trained_columns) != columns:
+            raise ValueError("Configured feature types differ from model.pkl. Retrain the model.")
+
+    # Infer category value types from the fitted encoder (e.g. numeric lot codes
+    # versus future neighborhood names), without hardcoding predictor names.
+    numeric_categories = set()
+    if categorical:
+        encoder = preprocessing.named_transformers_["categorical"].named_steps["encoder"]
+        for name, categories in zip(categorical, encoder.categories_):
+            if all(isinstance(value, Real) for value in categories):
+                numeric_categories.add(name)
+
+    @app.get("/health")
+    def health():
+        return jsonify({"status": "ok", "model_sha256": model_sha256})
+
+    @app.get("/model-info")
+    def model_info():
+        # Re-read display metadata, but never advertise fields that differ from
+        # the loaded model. Predictor changes require retraining and a restart.
+        try:
+            current = load_config(BACKEND_DIR / "model_config.json")
+            if any(current.get(key) != config[key] for key in ("predictors", "numeric_features", "categorical_features")):
+                raise ValueError("Predictor configuration changed. Retrain and restart the API.")
+            data = read_dataset(BACKEND_DIR.parent / "data" / current["data_file"])
+            schema = default_feature_schema(current, data)
+            schema_path = BACKEND_DIR / "feature_schema.json"
+            if schema_path.exists():
+                with schema_path.open(encoding="utf-8-sig") as file:
+                    overrides = json.load(file)
+                if not isinstance(overrides, dict):
+                    raise ValueError("feature_schema.json must contain an object.")
+                for name in schema:
+                    if name in overrides:
+                        schema[name].update(overrides[name])
+            features = []
+            for name in current["predictors"]:
+                metadata = schema.get(name)
+                if not isinstance(metadata, dict):
+                    raise ValueError(f"Missing frontend metadata for configured predictor '{name}'.")
+                if not isinstance(metadata.get("label"), str) or not metadata["label"].strip():
+                    raise ValueError(f"Missing display label for '{name}'.")
+                kind = metadata.get("input_type")
+                if kind not in ("number", "select"):
+                    raise ValueError(f"Unsupported input_type for '{name}'; use number or select.")
+                value_type = "number" if name in numeric or name in numeric_categories else "string"
+                if kind == "number" and value_type != "number":
+                    raise ValueError(f"Text predictor '{name}' requires select options.")
+                if kind == "select":
+                    options = metadata.get("options")
+                    if not isinstance(options, list) or not options:
+                        raise ValueError(f"Select predictor '{name}' requires a nonempty options array.")
+                    for option in options:
+                        valid = (isinstance(option, (int, float)) and not isinstance(option, bool)
+                                 and math.isfinite(option)) if value_type == "number" else (
+                                     isinstance(option, str) and bool(option.strip()))
+                        if not valid:
+                            raise ValueError(f"Options for '{name}' must contain {value_type} values.")
+                features.append({**metadata, "name": name, "value_type": value_type})
+            return jsonify({"features": features})
+        except (OSError, ValueError, TypeError, AttributeError) as error:
+            return jsonify({"error": f"Cannot load form configuration: {error}"}), 500
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        # Flask logs the traceback; keep internal details out of the response.
+        return jsonify({"error": "Unexpected server error while processing the request."}), 500
+
+    @app.post("/predict")
+    def predict():
+        # Require a JSON object with every configured predictor.
+        if not request.get_data().strip():
+            return jsonify({"error": "Request body is empty; provide a JSON object with predictor values."}), 400
+        try:
+            payload = request.get_json()
+        except UnsupportedMediaType:
+            return jsonify({"error": "Content-Type must be application/json."}), 400
+        except BadRequest:
+            return jsonify({"error": "Malformed JSON; check quotes, commas, and brackets."}), 400
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Request body must be a JSON object."}), 400
+        missing = [name for name in predictors if name not in payload]
+        if missing:
+            return jsonify({"error": "Missing required predictors: " + ", ".join(missing)}), 400
+
+        for name in predictors:
+            value = payload[name]
+            if name in numeric or name in numeric_categories:
+                try:
+                    valid = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+                except OverflowError:
+                    valid = False
+                expected = "a finite JSON number"
+            else:
+                valid = isinstance(value, str) and bool(value.strip())
+                expected = "a nonempty string"
+            if not valid:
+                return jsonify({"error": f"Invalid '{name}': expected {expected}."}), 400
+
+        # Preserve the exact training column names and order. Cleaning, imputation,
+        # encoding, and any inverse target transform are already in model.pkl.
+        row = pd.DataFrame([[payload[name] for name in predictors]], columns=predictors)
+        try:
+            prediction = float(model.predict(row)[0])
+            if not math.isfinite(prediction):
+                return jsonify({"error": "Inputs produced a nonfinite prediction; check the submitted values."}), 400
+        except (ValueError, OverflowError):
+            return jsonify({"error": "Submitted predictor values could not be processed by the model."}), 400
+        return jsonify({"predicted_value": prediction})
+
+    return app
+
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=False)

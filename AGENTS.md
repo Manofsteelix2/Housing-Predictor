@@ -35,7 +35,7 @@ The project uses:
 - `frontend/script.js`
   - Handles user input and communicates with the backend API
 
-- `data/housing.csv`
+- `data/housingB.csv`
   - Static housing dataset used to train the model
 
 ## Development Guidelines
@@ -51,6 +51,13 @@ The project uses:
 - Prefer simple, readable solutions suitable for a university analytics project.
 
 ## Modeling Guidelines
+
+- Derive predictors from every CSV column except the configured target and control column, in CSV order.
+- Use backend/model_settings.py for shared dataset parsing and predictor/type discovery.
+- Do not maintain numeric_features/categorical_features lists in model_config.json; these are derived at runtime.
+- feature_types provides optional type overrides, never a predictor inclusion list.
+- Generate frontend metadata for new columns automatically; feature_schema.json contains optional display overrides.
+- After dataset changes, retrain and restart Flask. Never reuse an artifact with different resolved settings.
 
 - The target variable is housing price.
 - Clearly separate predictors from the target.

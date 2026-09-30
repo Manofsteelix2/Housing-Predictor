@@ -1,11 +1,7 @@
 {
   "target": "MARKETVAL",
-  "numeric_features": [
-    "UNITSIZE",
-    "BEDROOMS",
-    "BATHROOMS",
-    "YRBUILT",
-    "LOTSIZE"
-  ],
-  "categorical_features": []
+  "data_file": "housingB.csv",
+  "target_transform": "log1p",
+  "control_column": "CONTROL",
+  "feature_types": {"LOTSIZE": "categorical", "DIVISION": "categorical"}
 }
