@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import joblib
+import numpy as np
 import pandas as pd
 from model_settings import load_config, read_dataset, default_feature_schema
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
@@ -85,6 +86,8 @@ def create_app():
                 if not isinstance(metadata.get("label"), str) or not metadata["label"].strip():
                     raise ValueError(f"Missing display label for '{name}'.")
                 kind = metadata.get("input_type")
+                if not isinstance(metadata.get("required", False), bool):
+                    raise ValueError(f"required for '{name}' must be a boolean.")
                 if kind not in ("number", "select"):
                     raise ValueError(f"Unsupported input_type for '{name}'; use number or select.")
                 value_type = "number" if name in numeric or name in numeric_categories else "string"
@@ -112,7 +115,7 @@ def create_app():
 
     @app.post("/predict")
     def predict():
-        # Require a JSON object with every configured predictor.
+        # A JSON object may omit any predictor; the fitted imputers fill gaps.
         if not request.get_data().strip():
             return jsonify({"error": "Request body is empty; provide a JSON object with predictor values."}), 400
         try:
@@ -123,12 +126,13 @@ def create_app():
             return jsonify({"error": "Malformed JSON; check quotes, commas, and brackets."}), 400
         if not isinstance(payload, dict):
             return jsonify({"error": "Request body must be a JSON object."}), 400
-        missing = [name for name in predictors if name not in payload]
-        if missing:
-            return jsonify({"error": "Missing required predictors: " + ", ".join(missing)}), 400
-
+        values = []
+        predictors_supplied = 0
         for name in predictors:
-            value = payload[name]
+            value = payload.get(name)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                values.append(np.nan)
+                continue
             if name in numeric or name in numeric_categories:
                 try:
                     valid = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
@@ -140,17 +144,26 @@ def create_app():
                 expected = "a nonempty string"
             if not valid:
                 return jsonify({"error": f"Invalid '{name}': expected {expected}."}), 400
+            values.append(value)
+            predictors_supplied += 1
 
         # Preserve the exact training column names and order. Cleaning, imputation,
         # encoding, and any inverse target transform are already in model.pkl.
-        row = pd.DataFrame([[payload[name] for name in predictors]], columns=predictors)
+        row = pd.DataFrame([values], columns=predictors)
+        # Preserve text-compatible columns even when every category is missing.
+        for name in categorical:
+            row[name] = row[name].astype(object)
         try:
             prediction = float(model.predict(row)[0])
             if not math.isfinite(prediction):
                 return jsonify({"error": "Inputs produced a nonfinite prediction; check the submitted values."}), 400
         except (ValueError, OverflowError):
             return jsonify({"error": "Submitted predictor values could not be processed by the model."}), 400
-        return jsonify({"predicted_value": prediction})
+        return jsonify({
+            "predicted_value": prediction,
+            "predictors_supplied": predictors_supplied,
+            "predictors_total": len(predictors),
+        })
 
     return app
 

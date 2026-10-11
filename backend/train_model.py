@@ -27,7 +27,9 @@ from model_settings import load_config, read_dataset
 
 BACKEND_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BACKEND_DIR / "model_config.json"
-DATA_PATH = BACKEND_DIR.parent / "data" / "housingB.csv"
+DATA_PATH = BACKEND_DIR.parent / "data" / "housingD.csv"
+# Select the dataset used when running this script directly.
+DATA_FILE = DATA_PATH
 MODEL_PATH = BACKEND_DIR / "model.pkl"
 DIAGNOSTICS_DIR = BACKEND_DIR / "diagnostics"
 
@@ -38,11 +40,12 @@ def load_data(path, config):
         data = read_dataset(path)
     except pd.errors.EmptyDataError as error:
         raise ValueError(f"Dataset is empty: {path}") from error
+    print(f"Dataset rows after loading: {len(data):,}")
     target = config["target"]
     features = config["predictors"]
     missing_columns = [name for name in [target] + features if name not in data.columns]
     if missing_columns:
-        raise ValueError("Configured columns missing from housingB.csv: " + ", ".join(missing_columns))
+        raise ValueError(f"Configured columns missing from {Path(path).name}: " + ", ".join(missing_columns))
     # Inspect original codes before cleaning or filtering any rows.
     for column in ("UNITSIZE", "LOTSIZE"):
         if column in data.columns:
@@ -197,8 +200,19 @@ def build_pipeline(config):
 
 def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
                 diagnostics_dir=DIAGNOSTICS_DIR):
+    # Resolve once before load_config reads the CSV for predictor discovery.
+    # Only an omitted path uses the configured dataset; invalid explicit paths fail.
+    if data_path is None:
+        with Path(config_path).open(encoding="utf-8-sig") as file:
+            settings = json.load(file)
+        data_path = Path(config_path).resolve().parent.parent / "data" / settings["data_file"]
+    data_path = Path(data_path).expanduser().resolve()
+    print(f"Resolved dataset path: {data_path}")
+    print(f"Dataset file exists: {data_path.exists()}")
+    print(f"Dataset filename: {data_path.name}")
+    if not data_path.is_file():
+        raise FileNotFoundError(f"Selected dataset file does not exist or is not a file: {data_path}")
     config = load_config(config_path, data_path)
-    data_path = Path(data_path) if data_path is not None else BACKEND_DIR.parent / "data" / config.get("data_file", DATA_PATH.name)
     features, target = load_data(data_path, config)
     # Both models need the same eligible rows, even when saving the raw model.
     if (target <= -1).any():
@@ -275,7 +289,7 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
 
 if __name__ == "__main__":
     try:
-        train_model()
+        train_model(data_path=DATA_FILE)
     except (OSError, ValueError, pd.errors.ParserError) as error:
         print(f"Training failed: {error}", file=sys.stderr)
         sys.exit(1)

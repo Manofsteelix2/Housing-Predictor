@@ -1,7 +1,7 @@
 {
-  "UNITSIZE": {"label": "Living Space", "input_type": "number", "min": 0, "step": 1, "help": "Current dataset values are codes 1–9; square-foot measurements are not yet confirmed."},
-  "BEDROOMS": {"label": "Bedrooms", "input_type": "number", "min": 0, "step": 1},
-  "BATHROOMS": {"label": "Bathrooms", "input_type": "number", "min": 0, "step": 1},
-  "YRBUILT": {"label": "Year Built", "input_type": "number", "min": 1800, "step": 1},
-  "LOTSIZE": {"label": "Lot Size", "input_type": "select", "options": [1, 2, 3, 4, 5, 6, 7], "help": "AHS lot-size category code (1–7)."}
+  "UNITSIZE": {"label": "Living Space", "input_type": "number", "required": false, "min": 0, "step": 1, "help": "Current dataset values are codes 1–9; square-foot measurements are not yet confirmed."},
+  "BEDROOMS": {"label": "Bedrooms", "input_type": "number", "required": false, "min": 0, "step": 1},
+  "BATHROOMS": {"label": "Bathrooms", "input_type": "number", "required": false, "min": 0, "step": 1},
+  "YRBUILT": {"label": "Year Built", "input_type": "number", "required": false, "min": 1800, "step": 1},
+  "LOTSIZE": {"label": "Lot Size", "input_type": "select", "required": false, "options": [1, 2, 3, 4, 5, 6, 7], "help": "AHS lot-size category code (1–7)."}
 }

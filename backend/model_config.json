@@ -1,6 +1,6 @@
 {
   "target": "MARKETVAL",
-  "data_file": "housingB.csv",
+  "data_file": "housingD.csv",
   "target_transform": "log1p",
   "control_column": "CONTROL",
   "feature_types": {"LOTSIZE": "categorical", "DIVISION": "categorical"}

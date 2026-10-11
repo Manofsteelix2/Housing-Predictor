@@ -1,5 +1,5 @@
 
-"""Send two smoke-test requests to a running API: python backend/test_predict.py."""
+"""Test optional inputs and invalid values: python backend/test_predict.py."""
 
 import argparse
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import pandas as pd
+from model_settings import load_config, read_dataset
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -24,7 +24,7 @@ def send_prediction(base_url, payload):
     try:
         response = urlopen(request, timeout=10)
     except HTTPError as error:
-        response = error  # A 400 response is expected for the missing-field test.
+        response = error  # Report API errors before checking the expected status.
     with response:
         status = response.code
         body = json.loads(response.read().decode("utf-8"))
@@ -40,27 +40,42 @@ def main():
 
     # Use configured columns and a complete dataset row, so new predictors do
     # not require rewriting this test or inventing category values.
-    with (BACKEND_DIR / "model_config.json").open(encoding="utf-8-sig") as file:
-        config = json.load(file)
-    predictors = config["numeric_features"] + config["categorical_features"]
-    data = pd.read_csv(BACKEND_DIR.parent / "data" / "housingB.csv")
+    config = load_config(BACKEND_DIR / "model_config.json")
+    predictors = config["predictors"]
+    data = read_dataset(BACKEND_DIR.parent / "data" / config["data_file"])
     complete_rows = data[predictors].dropna()
     if complete_rows.empty:
-        raise ValueError("Test request needs at least one complete predictor row in housingB.csv.")
+        raise ValueError(f"Test request needs at least one complete predictor row in {config['data_file']}.")
     payload = json.loads(complete_rows.iloc[0].to_json())
-    print("Valid request:", json.dumps(payload))
-    status, body = send_prediction(args.base_url, payload)
-    prediction = body.get("predicted_value")
-    if status != 200 or isinstance(prediction, bool) or not isinstance(prediction, (int, float)) or not math.isfinite(prediction):
-        raise AssertionError("Expected 200 and a finite numeric predicted_value.")
-
-    missing_field = predictors[0]
-    incomplete = {key: value for key, value in payload.items() if key != missing_field}
-    print(f"\nMissing-field request (omitting {missing_field}):")
-    status, body = send_prediction(args.base_url, incomplete)
-    if status != 400 or missing_field not in body.get("error", ""):
-        raise AssertionError("Expected 400 and an error naming the missing predictor.")
-    print("\nBoth prediction API smoke tests passed.")
+    # Omit predictors of both types when available, retaining one for a partial request.
+    candidates = list(dict.fromkeys(
+        config["numeric_features"][:2] + config["categorical_features"][:2] + predictors
+    ))
+    omitted = set(candidates[:min(4, max(0, len(predictors) - 1))])
+    incomplete = {key: value for key, value in payload.items() if key not in omitted}
+    for label, values in (("All predictors", payload),
+                          ("Several omitted predictors", incomplete),
+                          ("One predictor", {predictors[0]: payload[predictors[0]]}),
+                          ("No predictors", {}),
+                          ("Null and blank predictors", dict.fromkeys(predictors, None) | {
+                              predictors[0]: "", predictors[-1]: "   "
+                          })):
+        print(f"\n{label} request:", json.dumps(values))
+        status, body = send_prediction(args.base_url, values)
+        prediction = body.get("predicted_value")
+        if status != 200 or isinstance(prediction, bool) or not isinstance(prediction, (int, float)) or not math.isfinite(prediction):
+            raise AssertionError(f"{label}: expected 200 and a finite numeric predicted_value.")
+        supplied = sum(value is not None and not (isinstance(value, str) and not value.strip())
+                       for value in values.values())
+        if body.get("predictors_supplied") != supplied or body.get("predictors_total") != len(predictors):
+            raise AssertionError(f"{label}: incorrect predictor counts.")
+    numeric = config["numeric_features"]
+    if numeric:
+        print("\nInvalid provided numeric value:")
+        status, body = send_prediction(args.base_url, {numeric[0]: "not a number"})
+        if status != 400 or numeric[0] not in body.get("error", ""):
+            raise AssertionError("Expected 400 and an error naming the invalid numeric predictor.")
+    print("\nAll prediction API smoke tests passed.")
 
 
 if __name__ == "__main__":

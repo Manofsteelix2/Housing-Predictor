@@ -57,5 +57,5 @@ def default_feature_schema(config, data):
         if name in config["categorical_features"]:
             metadata = {"label": metadata["label"], "input_type": "select",
                         "options": data[name].dropna().drop_duplicates().tolist()}
-        schema[name] = metadata
+        schema[name] = {**metadata, "required": False}
     return schema

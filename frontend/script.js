@@ -39,12 +39,12 @@ async function loadFields() {
       const input = document.createElement(field.input_type === "select" ? "select" : "input");
       input.id = `feature-${index}`;
       input.name = field.name;
-      input.required = true;
+      input.required = field.required === true;
       label.htmlFor = input.id;
       label.textContent = field.label;
       if (field.input_type === "select") {
         if (!Array.isArray(field.options) || !field.options.length) throw new Error(`Missing options for ${field.label}.`);
-        input.add(new Option("Select an option", ""));
+        input.add(new Option("Leave blank or select an option", ""));
         field.options.forEach((option) => input.add(new Option(String(option), String(option))));
       } else {
         input.type = "number";
@@ -64,6 +64,11 @@ async function loadFields() {
     });
     container.replaceChildren(fragment);
     predictors = data.features;
+    console.debug("Generated predictor fields (required only when explicitly configured):");
+    console.table(predictors.map((field) => ({
+      name: field.name,
+      required: form.elements.namedItem(field.name).required,
+    })));
     formStatus.hidden = true;
     button.disabled = false;
   } catch (error) {
@@ -93,16 +98,28 @@ form.addEventListener("submit", async (event) => {
   errorMessage.hidden = true;
   price.hidden = true;
 
-  // Validate required fields and numeric constraints before calling the API.
+  // Validate supplied values; only explicit schema overrides require a value.
   const payload = {};
   for (const field of predictors) {
     const input = form.elements.namedItem(field.name);
     input.removeAttribute("aria-invalid");
     const value = input.value.trim();
+    // Blank optional fields are omitted so the model can impute their values.
+    if (value === "" && !input.validity.badInput) {
+      if (input.required) {
+        input.setAttribute("aria-invalid", "true");
+        errorMessage.textContent = `${field.label} is required.`;
+        errorMessage.hidden = false;
+        statusMessage.textContent = "Check the property details and try again.";
+        input.focus();
+        return;
+      }
+      continue;
+    }
     const parsed = field.value_type === "number" ? Number(value) : value;
-    if (!value || !input.checkValidity() || (field.value_type === "number" && !Number.isFinite(parsed))) {
+    if (input.validity.badInput || !input.checkValidity() || (field.value_type === "number" && !Number.isFinite(parsed))) {
       input.setAttribute("aria-invalid", "true");
-      errorMessage.textContent = !value ? `${field.label} is required.` : `Enter a valid value for ${field.label.toLowerCase()}. ${input.validationMessage}`;
+      errorMessage.textContent = `Enter a valid value for ${field.label.toLowerCase()}. ${input.validationMessage}`;
       errorMessage.hidden = false;
       statusMessage.textContent = "Check the property details and try again.";
       input.focus();
