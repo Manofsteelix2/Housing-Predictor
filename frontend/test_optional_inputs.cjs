@@ -36,7 +36,7 @@ class Element {
 }
 const nodes = new Map();
 for (const id of ["prediction-form", "predict-button", "error-message", "prediction-result",
-  "result-status", "predicted-value", "form-status", "predictor-fields"]) nodes.set(`#${id}`, new Element());
+  "result-status", "predicted-value", "form-status", "predictor-fields", "model-target-range"]) nodes.set(`#${id}`, new Element());
 function controls(element) {
   return (element.children ?? []).flatMap(child => [child, ...controls(child)]).filter(child => child.name);
 }
@@ -67,6 +67,10 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   // Let asynchronous metadata loading finish before submitting.
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fields().length, info.body.features.length);
+  assert.equal(nodes.get("#model-target-range").hidden, false);
+  const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+  assert.ok(nodes.get("#model-target-range").textContent.includes(currency.format(info.body.target_min)));
+  assert.ok(nodes.get("#model-target-range").textContent.includes(currency.format(info.body.target_max)));
   assert.ok(fields().every(field => field.required === false && !("required" in field.attributes)));
   for (const [label, filled] of [["all filled", fields().length], ["one blank", fields().length - 1],
     ["several blank", Math.max(1, fields().length - 4)], ["one filled", 1], ["all blank", 0]]) {

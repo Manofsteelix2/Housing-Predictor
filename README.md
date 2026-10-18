@@ -2,7 +2,7 @@
 
 ## Predictor discovery
 
-Every column in the configured CSV is a predictor except `target` and `control_column` (default CONTROL). CSV order is preserved. No fixed predictor count or frontend list exists. Remove unwanted columns from the CSV.
+Every column in the configured CSV is a candidate predictor except `target` and `control_column` (default CONTROL). CSV order is preserved. Training may exclude columns with excessive missingness; it never removes rows because predictors are missing. No fixed predictor count or frontend list exists.
 
 `backend/model_settings.py` provides shared parsing and discovery for training, Flask, and tests. `model_config.json` selects data_file, target, control_column, and target_transform. Numeric columns default to numeric preprocessing; text columns default to categorical preprocessing. Optional feature_types overrides classify coded variables without controlling inclusion. Currently LOTSIZE and DIVISION are categorical. Absent override columns are ignored. Do not maintain numeric_features/categorical_features lists in JSON; these are derived at runtime.
 
@@ -28,27 +28,34 @@ Open http://127.0.0.1:8000. After adding/removing CSV columns or changing types,
 
 ## Training
 
-Parsing supports ordinary CSV quoting and apostrophe-wrapped AHS codes. Missing/nonpositive housing targets are removed. Negative UNITSIZE/LOTSIZE codes become missing predictors; their rows are retained for imputation. Other survey special codes require research and explicit cleaning. UNITSIZE remains numeric, but its 1–9 values are not confirmed square footage. The CSV is never modified.
+Parsing supports ordinary CSV quoting and apostrophe-wrapped AHS codes. Missing, nonnumeric, nonfinite, and nonpositive housing targets are removed and never imputed. Every negative numeric predictor value becomes NaN, including negative codes in categorical columns; rows are retained for pipeline imputation. This shared rule applies during training and prediction, before missingness reporting and feature selection. UNITSIZE remains numeric, but its 1–9 values are not confirmed square footage. The CSV is never modified.
 
-The pipeline retains HousingCodeCleaner, ColumnTransformer, numeric median imputation, categorical mode imputation/one-hot encoding, and LinearRegression. Preprocessing learns only from training rows. Unknown categories are accepted; all-missing columns use a zero fallback. Keep housing_preprocessing.py importable when loading the model.
+The pipeline retains HousingCodeCleaner, ColumnTransformer, and LinearRegression. Numeric missing values use training-set medians. `add_missing_indicators` (default true) adds indicators for numeric columns missing during fitting. Categorical values are normalized to strings, missing values become the distinct `__MISSING__` category, and one-hot encoding handles unknown values. Keep housing_preprocessing.py importable when loading the model.
+
+MARKETVAL is never imputed: missing, nonpositive, and nonfinite targets are excluded. Predictor NaNs remain until pipeline preprocessing. A missingness report lists missing counts, percentages, and nonmissing counts for every candidate among valid-target rows. `max_missing_fraction` (default 0.50, range 0–1) excludes predictors whose **training-partition** missing fraction strictly exceeds the threshold. Test rows do not influence exclusions or medians. No predictor-based row deletion is used. If every predictor is excluded, training stops with a clear error. At threshold 1, all-missing columns can be retained; numeric columns use sklearn's zero fallback because no median exists.
+
+The final predictor list, excluded predictors, missingness report, and numeric categorical input types are saved in `model.pkl` training metadata alongside the full resolved configuration. Retrain and restart Flask after changing missingness settings. The API uses the saved final subset and verifies its column order against the fitted preprocessor.
+
+`target_min` and `target_max` in `model_config.json` intentionally restrict the model's training scope (currently $10,000–$5,000,000, inclusive). After invalid/missing-target cleaning and before the train/test split, training prints the configured range, separate counts below/above it, and the remaining row count. These exclusions are model-scope restrictions, not missing-data cleaning. Both bounds are saved directly in training metadata and exposed by `/model-info` and `/predict`; the frontend displays the loaded model's training range. Predictions are not clipped to the range. Bounds must be finite nonnegative numbers with minimum <= maximum; omitted/null bounds leave that side unrestricted. Change the settings, retrain, and restart Flask to test a different range.
 
 Each run compares raw/log1p regression on one reproducible 80/20 split. Log predictions are inverted with expm1. Metrics and plots use dollars. Target summaries, percentiles, R², RMSE, MAE, median/max absolute errors and metric differences are printed. target_transform selects which complete pipeline is saved as backend/model.pkl. Raw/log plots are in backend/diagnostics; old unprefixed prediction plots are historical. Use matching dependency versions for training and serving.
 
 ## API and frontend
 
 - GET /health: status and loaded-model fingerprint.
-- GET /model-info: CSV-derived fields and generated frontend metadata.
-- POST /predict: JSON containing every current predictor; returns numeric predicted_value in dollars.
+- GET /model-info: fields used by the fitted model, optional display metadata, and excluded_predictors.
+- POST /predict: JSON with any subset of predictors, including `{}`; returns predicted_value in dollars, predictors_supplied, predictors_total (fitted predictor count), and predictors_ignored (excluded fields present in the request).
 
-CORS is enabled. Numeric inputs/categories require finite JSON numbers; text categories require nonempty strings. Nulls, booleans, arrays and objects are rejected. Invalid requests return JSON 400 errors; unexpected errors return 500. Startup detects saved-model/settings mismatches.
+CORS is enabled. Missing keys, nulls, empty strings, and whitespace-only strings become NaN for fitted pipeline imputation. Supplied numeric inputs/categories require finite JSON numbers; supplied text categories require strings. Booleans, arrays and objects are rejected for active predictors. Fields excluded during fitting are ignored even if their supplied values are invalid. Invalid requests return JSON 400 errors; unexpected errors return 500. Startup detects saved-model/settings mismatches.
 
-feature_schema.json contains optional display overrides, not an inclusion list. New columns automatically get labels, number controls or selects with observed categories. Override labels, help, bounds, steps or options as needed. Removed columns' metadata is ignored. Invalid overrides produce clear errors; all-missing categorical fields require explicit options. HTML contains only the field container; CSS handles styling; JavaScript renders model-info and manages validation, loading, errors and currency formatting.
+feature_schema.json contains optional display overrides, not an inclusion list. Active columns automatically get labels, number controls or selects with observed categories. Fields default to `required: false`; an explicit `required: true` overrides frontend validation only. Blank optional fields are omitted before numeric conversion. Override labels, help, bounds, steps or options as needed. Removed/excluded columns' metadata is ignored. Invalid overrides produce clear errors; all-missing categorical fields require explicit options if retained. HTML contains only the field container; CSS handles styling; JavaScript renders model-info and manages validation, loading, errors and currency formatting.
 
 ## Verification
 
 ```sh
-python backend/test_predict.py --audit-only
+python -B -m unittest discover -s backend -p test_missingness.py
 python backend/test_predict.py
+node frontend/test_optional_inputs.cjs
 ```
 
-Use --base-url http://127.0.0.1:5001 for another port. The test constructs all CSV-derived predictors automatically, prints the exact payload/status/full JSON/prediction/errors, and asserts model columns/types, dataset/configuration fingerprints, API model fingerprint, prediction parity and missing-field rejection. Audit-only needs no running API. Restart stale Flask processes after retraining.
+Use --base-url http://127.0.0.1:5001 for another port. The API smoke test covers full, partial, single-field, empty, null/blank, invalid numeric, and excluded-field requests. It uses observed per-column values without requiring any complete predictor row. The unittest suite checks row retention, training-only selection/medians, missing categories/indicators, artifact roundtrips, and API compatibility using synthetic data. Restart stale Flask processes after retraining.

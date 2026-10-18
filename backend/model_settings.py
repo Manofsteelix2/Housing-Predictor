@@ -1,6 +1,7 @@
 """One shared rule: every CSV column except target/control is a predictor."""
 
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -46,7 +47,31 @@ def load_config(path, data_path=None):
     config.setdefault("target_transform", "none")
     if config["target_transform"] not in ("none", "log1p"):
         raise ValueError("target_transform must be none or log1p.")
+    threshold = config.setdefault("max_missing_fraction", 0.50)
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
+        raise ValueError("max_missing_fraction must be a number between 0 and 1.")
+    if not isinstance(config.setdefault("add_missing_indicators", True), bool):
+        raise ValueError("add_missing_indicators must be a boolean.")
+    # Omitted/null bounds leave that side unrestricted for other datasets.
+    for key in ("target_min", "target_max"):
+        bound = config.setdefault(key, None)
+        if bound is not None and (isinstance(bound, bool) or not isinstance(bound, (int, float))
+                                  or not math.isfinite(bound) or bound < 0):
+            raise ValueError(f"{key} must be a finite nonnegative number or null.")
+    if config["target_min"] is not None and config["target_max"] is not None:
+        if config["target_min"] > config["target_max"]:
+            raise ValueError("target_min must be less than or equal to target_max.")
     return config
+
+
+def fitted_feature_config(config, predictors):
+    """Keep a fitted subset in CSV order without changing source discovery."""
+    if not predictors or predictors != [name for name in config["predictors"] if name in predictors]:
+        raise ValueError("Fitted predictors must be a nonempty ordered subset of configured predictors.")
+    return {**config, "predictors": list(predictors), **{
+        kind: [name for name in config[kind] if name in predictors]
+        for kind in ("numeric_features", "categorical_features")
+    }}
 
 
 def default_feature_schema(config, data):

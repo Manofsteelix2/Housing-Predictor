@@ -19,15 +19,15 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 
-from housing_preprocessing import HousingCodeCleaner
-from model_settings import load_config, read_dataset
+from housing_preprocessing import HousingCodeCleaner, categorical_strings
+from model_settings import fitted_feature_config, load_config, read_dataset
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BACKEND_DIR / "model_config.json"
-DATA_PATH = BACKEND_DIR.parent / "data" / "housingD.csv"
+DATA_PATH = BACKEND_DIR.parent / "data" / "housingG.csv"
 # Select the dataset used when running this script directly.
 DATA_FILE = DATA_PATH
 MODEL_PATH = BACKEND_DIR / "model.pkl"
@@ -64,23 +64,37 @@ def load_data(path, config):
     data = data[[target] + features].copy()
     data = data.replace(r"^\s*$", np.nan, regex=True)
     # Housing prices must be positive; negative AHS target codes are not prices.
-    data[target] = pd.to_numeric(data[target], errors="raise")
-    invalid_target = data[target].notna() & (data[target] <= 0)
-    print(f"Excluded {invalid_target.sum():,} rows with nonpositive target values/special codes.")
+    data[target] = pd.to_numeric(data[target], errors="coerce")
+    invalid_target = data[target].notna() & ((data[target] <= 0) | ~np.isfinite(data[target]))
+    print(f"Excluded {invalid_target.sum():,} rows with nonpositive/nonfinite target values/special codes.")
     data = data.loc[~invalid_target].copy()
     # Replace special predictor codes, retaining rows for train-only imputation.
     cleaner = HousingCodeCleaner("LOTSIZE" in config["categorical_features"])
     cleaned_features = cleaner.transform(data[features])
-    for column in ("UNITSIZE", "LOTSIZE"):
-        if column in features:
-            newly_missing = data[column].notna() & cleaned_features[column].isna()
+    for column in features:
+        newly_missing = data[column].notna() & cleaned_features[column].isna()
+        if newly_missing.any():
             print(f"{column}: replaced {newly_missing.sum():,} invalid values with missing; rows retained.")
     data[features] = cleaned_features
     removed = int(data[target].isna().sum())
     data = data.dropna(subset=[target])
-    print(f"Removed {removed:,} rows with missing target '{target}'.")
+    print(f"Removed {removed:,} rows with missing/nonnumeric target '{target}'.")
+    # Intentional modeling scope, separate from invalid/missing-target cleaning.
+    lower, upper = config.get("target_min"), config.get("target_max")
+    below = data[target] < lower if lower is not None else pd.Series(False, index=data.index)
+    above = data[target] > upper if upper is not None else pd.Series(False, index=data.index)
+    range_start = f"${lower:,.0f}" if lower is not None else "no lower bound"
+    range_end = f"${upper:,.0f}" if upper is not None else "no upper bound"
+    print("\nIntentional model-scope restriction (not missing-data cleaning)")
+    print(f"Model target range: {range_start} to {range_end} (inclusive)")
+    if lower is not None:
+        print(f"Excluded {below.sum():,} observations below ${lower:,.0f}.")
+    if upper is not None:
+        print(f"Excluded {above.sum():,} observations above ${upper:,.0f}.")
+    data = data.loc[~(below | above)].copy()
+    print(f"Rows remaining for modeling: {len(data):,}")
     if len(data) < 6:
-        raise ValueError("Need at least 6 rows with a target for an 80/20 split and R² evaluation.")
+        raise ValueError("Need at least 6 valid-target rows within the modeling range for an 80/20 split and R² evaluation.")
     for column in [target] + config["numeric_features"]:
         try:
             data[column] = pd.to_numeric(data[column], errors="raise")
@@ -88,13 +102,6 @@ def load_data(path, config):
             raise ValueError(f"Column '{column}' contains nonnumeric values; correct them before training.") from error
         if np.isinf(data[column].to_numpy(dtype=float)).any():
             raise ValueError(f"Column '{column}' contains infinite values; correct them before training.")
-    negative_columns = [
-        column for column in [target] + config["numeric_features"]
-        if (data[column] < 0).any()
-    ]
-    if negative_columns:
-        print("Data note: negative values are retained in " + ", ".join(negative_columns)
-              + ". Check the dataset codebook for special missing-value codes.")
     if config.get("target_transform", "none") == "log1p" and (data[target] <= -1).any():
         raise ValueError(f"Target '{target}' must be greater than -1 for log1p transformation.")
     return data[features], data[target]
@@ -172,10 +179,14 @@ def build_pipeline(config):
     # Preprocessing: fit imputers and encoders only on the training partition.
     # Keep empty features so an all-missing predictor is never silently dropped.
     numeric_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True,
+                                  add_indicator=config.get("add_missing_indicators", True))),
     ])
     categorical_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent", keep_empty_features=True)),
+        # String normalization lets numeric survey codes coexist with the sentinel.
+        ("strings", FunctionTransformer(categorical_strings, feature_names_out="one-to-one")),
+        ("imputer", SimpleImputer(strategy="constant", fill_value="__MISSING__",
+                                  keep_empty_features=True)),
         ("encoder", OneHotEncoder(handle_unknown="ignore")),
     ])
     preprocessor = ColumnTransformer([
@@ -196,6 +207,28 @@ def build_pipeline(config):
         ("preprocessor", preprocessor),
         ("regressor", regressor),
     ])
+
+
+def select_predictors(features, training_features, config):
+    """Report all eligible rows; learn column exclusions only from training rows."""
+    missing = features.isna().sum()
+    training_fraction = training_features.isna().mean()
+    report = pd.DataFrame({
+        "missing": missing,
+        "percent_missing": features.isna().mean() * 100,
+        "nonmissing": features.notna().sum(),
+        "training_missing_fraction": training_fraction,
+    })
+    excluded = training_fraction[training_fraction > config["max_missing_fraction"]].index.tolist()
+    report["excluded"] = report.index.isin(excluded)
+    print("\nPredictor missingness (valid-target rows; exclusions use training rows only)")
+    print(report.to_string(float_format=lambda value: f"{value:.4f}"))
+    print(f"Maximum training missing fraction: {config['max_missing_fraction']:.2%}")
+    for name in excluded:
+        print(f"Excluded predictor {name}: {training_fraction[name]:.2%} missing in training; rows retained.")
+    final = [name for name in config["predictors"] if name not in excluded]
+    print("Final predictors used by the model: " + ", ".join(final))
+    return fitted_feature_config(config, final), report.to_dict(orient="index"), excluded
 
 
 def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
@@ -223,11 +256,16 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
     x_train, x_test, y_train, y_test = train_test_split(
         features, target, test_size=0.2, random_state=42
     )
+    fitted_config, missingness_report, excluded = select_predictors(features, x_train, config)
+    final_predictors = fitted_config["predictors"]
+    numeric_categories = [name for name in fitted_config["categorical_features"]
+                          if pd.api.types.is_numeric_dtype(features[name])]
+    x_train, x_test = x_train[final_predictors], x_test[final_predictors]
     if y_test.nunique() < 2:
         raise ValueError("Test target is constant; R² is not meaningful. Supply more varied data.")
     empty_features = x_train.columns[x_train.isna().all()].tolist()
     if empty_features:
-        print("Data note: all-missing training predictors retained with a zero fallback: "
+        print("Data note: all-missing training predictors retained (numeric zero/categorical __MISSING__ fallback): "
               + ", ".join(empty_features))
 
     models, results = {}, {}
@@ -235,7 +273,7 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
     print(f"Training rows: {len(x_train):,} | Testing rows: {len(x_test):,}")
     for name, transform in (("raw", "none"), ("log", "log1p")):
         # Model training: only the target transformation differs between models.
-        model = build_pipeline({**config, "target_transform": transform})
+        model = build_pipeline({**fitted_config, "target_transform": transform})
         model.fit(x_train, y_train)
         # Evaluation: log-model predict() applies expm1 before all metrics/plots.
         predictions = model.predict(x_test)
@@ -269,6 +307,12 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
         "data_file": data_path.name,
         "data_sha256": hashlib.sha256(data_path.read_bytes()).hexdigest(),
         "config": config,
+        "final_predictors": final_predictors,
+        "excluded_predictors": excluded,
+        "numeric_categorical_features": numeric_categories,
+        "missingness_report": missingness_report,
+        "target_min": config["target_min"],
+        "target_max": config["target_max"],
     }
     joblib.dump(model, model_path)
     print(f"Saved configured {selected} pipeline to: {model_path}")

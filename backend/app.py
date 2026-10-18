@@ -11,7 +11,7 @@ from flask_cors import CORS
 import joblib
 import numpy as np
 import pandas as pd
-from model_settings import load_config, read_dataset, default_feature_schema
+from model_settings import load_config, read_dataset, default_feature_schema, fitted_feature_config
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 
@@ -24,19 +24,24 @@ def create_app():
 
     # Load configuration and the complete fitted pipeline once, at startup.
     config = load_config(BACKEND_DIR / "model_config.json")
-    numeric = config["numeric_features"]
-    categorical = config["categorical_features"]
+    model_path = BACKEND_DIR / "model.pkl"
+    model = joblib.load(model_path)
+    metadata = getattr(model, "training_metadata_", {})
+    if metadata.get("config") != config:
+        raise ValueError("Dataset-derived settings differ from the saved model. Retrain before starting the API.")
+    # Advertise the scope of the loaded artifact, not unsaved configuration edits.
+    target_range = {key: metadata.get(key) for key in ("target_min", "target_max")}
+    fitted_config = fitted_feature_config(config, metadata.get("final_predictors", config["predictors"]))
+    numeric = fitted_config["numeric_features"]
+    categorical = fitted_config["categorical_features"]
     if any(not isinstance(group, list) or any(
         not isinstance(name, str) or not name.strip() for name in group
     ) for group in (numeric, categorical)):
         raise ValueError("Feature configuration must contain lists of column names.")
-    predictors = config["predictors"]
+    predictors = fitted_config["predictors"]
+    excluded = [name for name in config["predictors"] if name not in predictors]
     if not predictors or len(predictors) != len(set(predictors)):
         raise ValueError("Configure at least one predictor, with no duplicate names.")
-    model_path = BACKEND_DIR / "model.pkl"
-    model = joblib.load(model_path)
-    if getattr(model, "training_metadata_", {}).get("config") != config:
-        raise ValueError("Dataset-derived settings differ from the saved model. Retrain before starting the API.")
     model_sha256 = hashlib.sha256(model_path.read_bytes()).hexdigest()
     preprocessing = model.named_steps["preprocessor"]
     if list(preprocessing.feature_names_in_) != predictors:
@@ -48,8 +53,8 @@ def create_app():
 
     # Infer category value types from the fitted encoder (e.g. numeric lot codes
     # versus future neighborhood names), without hardcoding predictor names.
-    numeric_categories = set()
-    if categorical:
+    numeric_categories = set(metadata.get("numeric_categorical_features", []))
+    if categorical and "numeric_categorical_features" not in metadata:
         encoder = preprocessing.named_transformers_["categorical"].named_steps["encoder"]
         for name, categories in zip(categorical, encoder.categories_):
             if all(isinstance(value, Real) for value in categories):
@@ -68,7 +73,7 @@ def create_app():
             if any(current.get(key) != config[key] for key in ("predictors", "numeric_features", "categorical_features")):
                 raise ValueError("Predictor configuration changed. Retrain and restart the API.")
             data = read_dataset(BACKEND_DIR.parent / "data" / current["data_file"])
-            schema = default_feature_schema(current, data)
+            schema = default_feature_schema(fitted_config, data)
             schema_path = BACKEND_DIR / "feature_schema.json"
             if schema_path.exists():
                 with schema_path.open(encoding="utf-8-sig") as file:
@@ -79,7 +84,7 @@ def create_app():
                     if name in overrides:
                         schema[name].update(overrides[name])
             features = []
-            for name in current["predictors"]:
+            for name in predictors:
                 metadata = schema.get(name)
                 if not isinstance(metadata, dict):
                     raise ValueError(f"Missing frontend metadata for configured predictor '{name}'.")
@@ -104,7 +109,7 @@ def create_app():
                         if not valid:
                             raise ValueError(f"Options for '{name}' must contain {value_type} values.")
                 features.append({**metadata, "name": name, "value_type": value_type})
-            return jsonify({"features": features})
+            return jsonify({"features": features, "excluded_predictors": excluded, **target_range})
         except (OSError, ValueError, TypeError, AttributeError) as error:
             return jsonify({"error": f"Cannot load form configuration: {error}"}), 500
 
@@ -163,6 +168,8 @@ def create_app():
             "predicted_value": prediction,
             "predictors_supplied": predictors_supplied,
             "predictors_total": len(predictors),
+            "predictors_ignored": [name for name in excluded if name in payload],
+            **target_range,
         })
 
     return app

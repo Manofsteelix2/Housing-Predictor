@@ -1,7 +1,11 @@
 {
   "target": "MARKETVAL",
-  "data_file": "housingD.csv",
+  "data_file": "housingF.csv",
   "target_transform": "log1p",
+  "target_min": 10000,
+  "target_max": 3000000,
+  "max_missing_fraction": 0.50,
+  "add_missing_indicators": true,
   "control_column": "CONTROL",
   "feature_types": {"LOTSIZE": "categorical", "DIVISION": "categorical"}
 }

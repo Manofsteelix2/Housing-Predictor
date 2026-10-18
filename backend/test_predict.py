@@ -8,6 +8,8 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import joblib
+import pandas as pd
 from model_settings import load_config, read_dataset
 
 
@@ -38,18 +40,20 @@ def main():
     parser.add_argument("--base-url", default="http://127.0.0.1:5000")
     args = parser.parse_args()
 
-    # Use configured columns and a complete dataset row, so new predictors do
-    # not require rewriting this test or inventing category values.
+    # Use the artifact's final subset; no complete predictor row is required.
     config = load_config(BACKEND_DIR / "model_config.json")
-    predictors = config["predictors"]
+    model = joblib.load(BACKEND_DIR / "model.pkl")
+    predictors = model.training_metadata_.get("final_predictors", config["predictors"])
     data = read_dataset(BACKEND_DIR.parent / "data" / config["data_file"])
-    complete_rows = data[predictors].dropna()
-    if complete_rows.empty:
-        raise ValueError(f"Test request needs at least one complete predictor row in {config['data_file']}.")
-    payload = json.loads(complete_rows.iloc[0].to_json())
+    values = {}
+    for name in predictors:
+        observed = data[name].dropna()
+        values[name] = observed.iloc[0] if not observed.empty else None
+    payload = json.loads(pd.Series(values).to_json())
     # Omit predictors of both types when available, retaining one for a partial request.
     candidates = list(dict.fromkeys(
-        config["numeric_features"][:2] + config["categorical_features"][:2] + predictors
+        [name for name in config["numeric_features"] if name in predictors][:2]
+        + [name for name in config["categorical_features"] if name in predictors][:2] + predictors
     ))
     omitted = set(candidates[:min(4, max(0, len(predictors) - 1))])
     incomplete = {key: value for key, value in payload.items() if key not in omitted}
@@ -69,12 +73,17 @@ def main():
                        for value in values.values())
         if body.get("predictors_supplied") != supplied or body.get("predictors_total") != len(predictors):
             raise AssertionError(f"{label}: incorrect predictor counts.")
-    numeric = config["numeric_features"]
+    numeric = [name for name in config["numeric_features"] if name in predictors]
     if numeric:
         print("\nInvalid provided numeric value:")
         status, body = send_prediction(args.base_url, {numeric[0]: "not a number"})
         if status != 400 or numeric[0] not in body.get("error", ""):
             raise AssertionError("Expected 400 and an error naming the invalid numeric predictor.")
+    excluded = [name for name in config["predictors"] if name not in predictors]
+    if excluded:
+        status, body = send_prediction(args.base_url, {name: "ignored" for name in excluded})
+        if status != 200 or body.get("predictors_ignored") != excluded:
+            raise AssertionError("Excluded predictors should be ignored and reported.")
     print("\nAll prediction API smoke tests passed.")
 
 

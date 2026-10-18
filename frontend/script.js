@@ -24,6 +24,16 @@ async function loadFields() {
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.error || `Unable to load form (HTTP ${response.status}).`);
     if (!Array.isArray(data?.features) || !data.features.length) throw new Error("The API returned no configured fields.");
+    const targetRange = document.querySelector("#model-target-range");
+    if (Number.isFinite(data.target_min) && Number.isFinite(data.target_max)) {
+      targetRange.textContent = `Training target range: ${currency.format(data.target_min)} to ${currency.format(data.target_max)} (inclusive).`;
+      targetRange.hidden = false;
+    } else if (Number.isFinite(data.target_min) || Number.isFinite(data.target_max)) {
+      targetRange.textContent = Number.isFinite(data.target_min)
+        ? `Training target minimum: ${currency.format(data.target_min)} (inclusive).`
+        : `Training target maximum: ${currency.format(data.target_max)} (inclusive).`;
+      targetRange.hidden = false;
+    }
     const fragment = document.createDocumentFragment();
     const names = new Set();
     data.features.forEach((field, index) => {
