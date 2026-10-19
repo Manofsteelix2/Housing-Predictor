@@ -79,6 +79,10 @@ async function loadFields() {
         input.setAttribute("aria-describedby", help.id);
         wrapper.append(help);
       }
+      if (field.name === "DIVISION" && field.input_type === "select" &&
+          typeof attachCensusDivisionMap === "function") {
+        attachCensusDivisionMap(wrapper, input, field);
+      }
       fragment.append(wrapper);
     });
     container.replaceChildren(fragment);

@@ -54,6 +54,8 @@ The frontend gives the point estimate greater visual prominence than the predict
 
 ## API and frontend
 
+The optional DIVISION select uses the nine Census division names from feature_schema.json. Its clickable SVG map selects the same control, highlights every state in that division, and includes Alaska, Hawaii and DC. Dropdown changes and blank selections update the map. The selected numeric code (1–9), or null when unspecified, is sent unchanged to the API; location is modeled at Census division level rather than exact local market location. State membership lives alongside division options in the schema. Local geometry in frontend/census-map.js is derived from [us-atlas](https://github.com/topojson/us-atlas), using Census boundaries; its license is in frontend/us-map-LICENSE.txt. The map requires no runtime network service or mapping library.
+
 - GET /health: status and loaded-model fingerprint.
 - GET /model-info: fields used by the fitted model, optional display metadata, excluded_predictors, training target bounds, and prediction_interval calibration metadata (or prediction_interval_error).
 - POST /predict: JSON with any subset of predictors, including `{}`; returns predicted_value in dollars, prediction_interval_95 (lower/upper), predictors_supplied, predictors_total (fitted predictor count), and predictors_ignored (excluded fields present in the request).

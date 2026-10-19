@@ -444,5 +444,118 @@
         "label": "No"
       }
     ]
+  },
+  "DIVISION": {
+    "label": "Census Division",
+    "input_type": "select",
+    "required": false,
+    "help": "Location is modeled at the U.S. Census division level. This does not select an exact local market location.",
+    "options": [
+      {
+        "value": 1,
+        "label": "New England",
+        "states": [
+          "CT",
+          "ME",
+          "MA",
+          "NH",
+          "RI",
+          "VT"
+        ]
+      },
+      {
+        "value": 2,
+        "label": "Middle Atlantic",
+        "states": [
+          "NJ",
+          "NY",
+          "PA"
+        ]
+      },
+      {
+        "value": 3,
+        "label": "East North Central",
+        "states": [
+          "IL",
+          "IN",
+          "MI",
+          "OH",
+          "WI"
+        ]
+      },
+      {
+        "value": 4,
+        "label": "West North Central",
+        "states": [
+          "IA",
+          "KS",
+          "MN",
+          "MO",
+          "NE",
+          "ND",
+          "SD"
+        ]
+      },
+      {
+        "value": 5,
+        "label": "South Atlantic",
+        "states": [
+          "DE",
+          "FL",
+          "GA",
+          "MD",
+          "NC",
+          "SC",
+          "VA",
+          "WV",
+          "DC"
+        ]
+      },
+      {
+        "value": 6,
+        "label": "East South Central",
+        "states": [
+          "AL",
+          "KY",
+          "MS",
+          "TN"
+        ]
+      },
+      {
+        "value": 7,
+        "label": "West South Central",
+        "states": [
+          "AR",
+          "LA",
+          "OK",
+          "TX"
+        ]
+      },
+      {
+        "value": 8,
+        "label": "Mountain",
+        "states": [
+          "AZ",
+          "CO",
+          "ID",
+          "MT",
+          "NV",
+          "NM",
+          "UT",
+          "WY"
+        ]
+      },
+      {
+        "value": 9,
+        "label": "Pacific",
+        "states": [
+          "AK",
+          "CA",
+          "HI",
+          "OR",
+          "WA"
+        ]
+      }
+    ]
   }
 }

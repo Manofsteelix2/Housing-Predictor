@@ -49,6 +49,11 @@ class Element {
   setAttribute(name, value) { this.attributes[name] = value; }
   removeAttribute(name) { delete this.attributes[name]; }
   addEventListener(name, handler) { this.listeners[name] = handler; }
+  dispatchEvent(event) {
+    event.target = this;
+    this.listeners[event.type]?.(event);
+    if (event.bubbles) form.listeners[event.type]?.(event);
+  }
   checkValidity() { return !this.validity.badInput && (!this.required || this.value !== ""); }
   focus() {}
 }
@@ -70,7 +75,9 @@ const requests = [];
 let responseOverride;
 const context = vm.createContext({
   document: { querySelector: selector => nodes.get(selector),
-    createElement: () => new Element(), createDocumentFragment: () => new Element() },
+    createElement: () => new Element(), createElementNS: () => new Element(),
+    createDocumentFragment: () => new Element() },
+  Event: class { constructor(type, options = {}) { this.type = type; this.bubbles = options.bubbles; } },
   Option: function(text, value) { this.text = text; this.value = value; },
   Intl, AbortController, setTimeout, clearTimeout, console,
   fetch: async (url, options) => {
@@ -85,6 +92,7 @@ const context = vm.createContext({
     return { ok: response.status === 200, status: response.status, json: async () => response.body };
   },
 });
+vm.runInContext(fs.readFileSync(path.join(__dirname, "census-map.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), context);
   // Let asynchronous metadata loading finish before submitting.
   await new Promise(resolve => setImmediate(resolve));
@@ -94,6 +102,39 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   assert.ok(nodes.get("#model-target-range").textContent.includes(currency.format(info.body.target_min)));
   assert.ok(nodes.get("#model-target-range").textContent.includes(currency.format(info.body.target_max)));
   assert.ok(fields().every(field => field.required === false && !("required" in field.attributes)));
+  const descendants = element => (element.children ?? []).flatMap(child => [child, ...descendants(child)]);
+  const states = descendants(nodes.get("#predictor-fields")).filter(node => node.attributes?.d);
+  assert.equal(states.length, 51, "50 states and DC are selectable");
+  const division = form.elements.namedItem("DIVISION");
+  const divisionGroups = ["CT ME MA NH RI VT", "NJ NY PA", "IL IN MI OH WI",
+    "IA KS MN MO NE ND SD", "DE FL GA MD NC SC VA WV DC", "AL KY MS TN",
+    "AR LA OK TX", "AZ CO ID MT NV NM UT WY", "AK CA HI OR WA"];
+  divisionGroups.forEach((group, index) => {
+    const members = group.split(" ");
+    members.forEach(code => {
+      states.find(state => state.attributes["data-state"] === code).listeners.click();
+      assert.equal(division.value, String(index + 1));
+      assert.deepEqual(states.filter(state => state.attributes["aria-pressed"] === "true")
+        .map(state => state.attributes["data-state"]).sort(), [...members].sort());
+    });
+    division.value = String(index + 1);
+    division.listeners.change();
+    assert.equal(states.filter(state => state.attributes["aria-pressed"] === "true").length, members.length);
+  });
+  const alaska = states.find(state => state.attributes["data-state"] === "AK");
+  division.disabled = true;
+  division.value = "";
+  alaska.listeners.click();
+  assert.equal(division.value, "", "map cannot change a request in flight");
+  division.disabled = false;
+  for (const key of ["Enter", " "]) {
+    alaska.listeners.keydown({ key, preventDefault() {} });
+    assert.equal(division.value, "9");
+  }
+  division.value = "";
+  division.listeners.change();
+  assert.ok(states.every(state => state.attributes["aria-pressed"] === "false"));
+  console.log("Passed: all state mappings, division highlighting, dropdown sync, keyboard and blank clearing.");
   for (const metadata of info.body.features.filter(field => field.input_type === "select")) {
     const input = form.elements.namedItem(metadata.name);
     assert.equal(input.children[0].text, "Not specified");
