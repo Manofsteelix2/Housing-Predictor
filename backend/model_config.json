@@ -4,8 +4,43 @@
   "target_transform": "log1p",
   "target_min": 10000,
   "target_max": 3000000,
-  "max_missing_fraction": 0.50,
+  "max_missing_fraction": 0.5,
   "add_missing_indicators": true,
   "control_column": "CONTROL",
-  "feature_types": {"LOTSIZE": "categorical", "DIVISION": "categorical"}
+  "feature_types": {
+    "LOTSIZE": "categorical",
+    "DIVISION": "categorical"
+  },
+  "derived_binary_features": {
+    "WASHER_PRESENT": {
+      "source": "WASHER",
+      "yes_values": [
+        1
+      ]
+    },
+    "PORCH_PRESENT": {
+      "source": "PORCH",
+      "yes_values": [
+        1
+      ]
+    },
+    "FIREPLACE_PRESENT": {
+      "source": "FIREPLACE",
+      "yes_values": [
+        1,
+        2,
+        3
+      ]
+    },
+    "DINING_PRESENT": {
+      "source": "DINING",
+      "yes_values": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  }
 }

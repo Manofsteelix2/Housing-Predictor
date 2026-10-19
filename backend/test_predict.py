@@ -44,7 +44,8 @@ def main():
     config = load_config(BACKEND_DIR / "model_config.json")
     model = joblib.load(BACKEND_DIR / "model.pkl")
     predictors = model.training_metadata_.get("final_predictors", config["predictors"])
-    data = read_dataset(BACKEND_DIR.parent / "data" / config["data_file"])
+    data = read_dataset(BACKEND_DIR.parent / "data" / config["data_file"],
+                        config.get("derived_binary_features"))
     values = {}
     for name in predictors:
         observed = data[name].dropna()

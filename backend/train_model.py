@@ -38,7 +38,7 @@ INTERVAL_COVERAGE = 0.95
 def load_data(path, config):
     # Loading data: validate every configured column before selecting predictors.
     try:
-        data = read_dataset(path)
+        data = read_dataset(path, config.get("derived_binary_features"))
     except pd.errors.EmptyDataError as error:
         raise ValueError(f"Dataset is empty: {path}") from error
     print(f"Dataset rows after loading: {len(data):,}")
@@ -70,7 +70,8 @@ def load_data(path, config):
     print(f"Excluded {invalid_target.sum():,} rows with nonpositive/nonfinite target values/special codes.")
     data = data.loc[~invalid_target].copy()
     # Replace special predictor codes, retaining rows for train-only imputation.
-    cleaner = HousingCodeCleaner("LOTSIZE" in config["categorical_features"])
+    cleaner = HousingCodeCleaner("LOTSIZE" in config["categorical_features"],
+                                 config.get("derived_binary_features"))
     cleaned_features = cleaner.transform(data[features])
     for column in features:
         newly_missing = data[column].notna() & cleaned_features[column].isna()
@@ -204,7 +205,8 @@ def build_pipeline(config):
         )
     return Pipeline([
         # Persist code cleaning so raw inputs receive the same treatment later.
-        ("code_cleaner", HousingCodeCleaner("LOTSIZE" in config["categorical_features"])),
+        ("code_cleaner", HousingCodeCleaner("LOTSIZE" in config["categorical_features"],
+                                            config.get("derived_binary_features"))),
         ("preprocessor", preprocessor),
         ("regressor", regressor),
     ])

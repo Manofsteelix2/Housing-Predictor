@@ -81,9 +81,10 @@ def create_app():
         # the loaded model. Predictor changes require retraining and a restart.
         try:
             current = load_config(BACKEND_DIR / "model_config.json")
-            if any(current.get(key) != config[key] for key in ("predictors", "numeric_features", "categorical_features")):
+            if current != config:
                 raise ValueError("Predictor configuration changed. Retrain and restart the API.")
-            data = read_dataset(BACKEND_DIR.parent / "data" / current["data_file"])
+            data = read_dataset(BACKEND_DIR.parent / "data" / current["data_file"],
+                                current.get("derived_binary_features"))
             schema = default_feature_schema(fitted_config, data)
             schema_path = BACKEND_DIR / "feature_schema.json"
             if schema_path.exists():
@@ -114,6 +115,11 @@ def create_app():
                     if not isinstance(options, list) or not options:
                         raise ValueError(f"Select predictor '{name}' requires a nonempty options array.")
                     for option in options:
+                        # Labels are presentation only; validate the original model value.
+                        if isinstance(option, dict):
+                            if not isinstance(option.get("label"), str) or not option["label"].strip():
+                                raise ValueError(f"Options for '{name}' require nonempty labels.")
+                            option = option.get("value")
                         valid = (isinstance(option, (int, float)) and not isinstance(option, bool)
                                  and math.isfinite(option)) if value_type == "number" else (
                                      isinstance(option, str) and bool(option.strip()))
@@ -164,6 +170,8 @@ def create_app():
                 expected = "a nonempty string"
             if not valid:
                 return jsonify({"error": f"Invalid '{name}': expected {expected}."}), 400
+            if name in config.get("derived_binary_features", {}) and value >= 0 and value not in (0, 1):
+                return jsonify({"error": f"Invalid '{name}': expected 0, 1, or null."}), 400
             values.append(value)
             predictors_supplied += 1
 

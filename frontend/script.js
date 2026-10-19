@@ -56,8 +56,15 @@ async function loadFields() {
       label.textContent = field.label;
       if (field.input_type === "select") {
         if (!Array.isArray(field.options) || !field.options.length) throw new Error(`Missing options for ${field.label}.`);
-        input.add(new Option("Leave blank or select an option", ""));
-        field.options.forEach((option) => input.add(new Option(String(option), String(option))));
+        input.add(new Option("Not specified", ""));
+        field.options.forEach((option) => {
+          const value = typeof option === "object" && option !== null ? option.value : option;
+          const label = typeof option === "object" && option !== null ? option.label : option;
+          // Survey missing codes are never choices, including in generated metadata.
+          const code = String(value).trim();
+          if (!code || Number(code) < 0 || /^\.[a-z_]*$/i.test(code)) return;
+          input.add(new Option(String(label), String(value)));
+        });
       } else {
         input.type = "number";
         ["min", "max", "step"].forEach((key) => {
@@ -118,7 +125,7 @@ form.addEventListener("submit", async (event) => {
     const input = form.elements.namedItem(field.name);
     input.removeAttribute("aria-invalid");
     const value = input.value.trim();
-    // Blank optional fields are omitted so the model can impute their values.
+    // Blank optional fields are missing, never numeric zero.
     if (value === "" && !input.validity.badInput) {
       if (input.required) {
         input.setAttribute("aria-invalid", "true");
@@ -128,6 +135,7 @@ form.addEventListener("submit", async (event) => {
         input.focus();
         return;
       }
+      payload[field.name] = null;
       continue;
     }
     const parsed = field.value_type === "number" ? Number(value) : value;

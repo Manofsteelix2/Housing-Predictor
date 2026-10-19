@@ -6,7 +6,11 @@ Every column in the configured CSV is a candidate predictor except `target` and 
 
 `backend/model_settings.py` provides shared parsing and discovery for training, Flask, and tests. `model_config.json` selects data_file, target, control_column, and target_transform. Numeric columns default to numeric preprocessing; text columns default to categorical preprocessing. Optional feature_types overrides classify coded variables without controlling inclusion. Currently LOTSIZE and DIVISION are categorical. Absent override columns are ignored. Do not maintain numeric_features/categorical_features lists in JSON; these are derived at runtime.
 
-Current predictors: UNITSIZE, BEDROOMS, BATHROOMS, YRBUILT, LOTSIZE, DIVISION, RATINGNH. This list describes the current data, not a required schema. MARKETVAL and CONTROL are excluded.
+Every source predictor remains eligible in CSV order. Configured `derived_binary_features` replace their source columns in that same position; original and derived versions are never included together. MARKETVAL and CONTROL are excluded.
+
+The configured amenity features are WASHER_PRESENT (source WASHER = 1), PORCH_PRESENT (PORCH = 1), FIREPLACE_PRESENT (FIREPLACE in 1–3), and DINING_PRESENT (DINING in 1–5). These source codes map to 1; other finite nonnegative source values map to 0. Negative, blank, nonnumeric survey missing codes and nonfinite values map to NaN. Shared dataset parsing applies the definitions before discovery and training missingness selection, and the saved HousingCodeCleaner retains the same definitions. It can derive raw source columns for direct pipeline use or accept already-derived binary columns without recoding them. The CSV remains unchanged.
+
+The frontend uses only the derived names for these amenities, with Yes = 1, No = 0, and Not specified = null. The API rejects nonnegative derived values other than 0 or 1; negative codes remain missing. Change derivation definitions only with retraining and a Flask restart.
 
 ## Run
 
@@ -56,12 +60,13 @@ The frontend gives the point estimate greater visual prominence than the predict
 
 CORS is enabled. Missing keys, nulls, empty strings, and whitespace-only strings become NaN for fitted pipeline imputation. Supplied numeric inputs/categories require finite JSON numbers; supplied text categories require strings. Booleans, arrays and objects are rejected for active predictors. Fields excluded during fitting are ignored even if their supplied values are invalid. Invalid requests return JSON 400 errors; unexpected errors return 500. Startup detects saved-model/settings mismatches.
 
-feature_schema.json contains optional display overrides, not an inclusion list. Active columns automatically get labels, number controls or selects with observed categories. Fields default to `required: false`; an explicit `required: true` overrides frontend validation only. Blank optional fields are omitted before numeric conversion. Override labels, help, bounds, steps or options as needed. Removed/excluded columns' metadata is ignored. Invalid overrides produce clear errors; all-missing categorical fields require explicit options if retained. HTML contains only the field container; CSS handles styling; JavaScript renders model-info and manages validation, loading, errors and currency formatting.
+feature_schema.json contains optional display overrides, not an inclusion list. Active columns automatically get labels, number controls or selects with observed categories. Fields default to `required: false`; an explicit `required: true` overrides frontend validation only. Blank optional fields submit null before numeric conversion. Select options may be scalar codes or objects with separate `value` and `label`; only values are submitted. Negative and survey missing codes are excluded from displayed choices. Override labels, help, bounds, steps or options as needed. Removed/excluded columns' metadata is ignored. Invalid overrides produce clear errors; all-missing categorical fields require explicit options if retained. HTML contains only the field container; CSS handles styling; JavaScript renders model-info and manages validation, loading, errors and currency formatting.
 
 ## Verification
 
 ```sh
 python -B -m unittest discover -s backend -p test_missingness.py
+python -B -m unittest discover -s backend -p test_binary_amenities.py
 python backend/test_predict.py
 node frontend/test_optional_inputs.cjs
 ```

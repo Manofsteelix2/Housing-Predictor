@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from numbers import Real
 from sklearn.base import BaseEstimator, TransformerMixin
+from model_settings import derive_binary_features
 
 
 def categorical_strings(values):
@@ -23,14 +24,15 @@ def categorical_strings(values):
 class HousingCodeCleaner(TransformerMixin, BaseEstimator):
     """Replace negative predictor codes and invalid sizes with NaN; retain rows."""
 
-    def __init__(self, lot_size_categories=False):
+    def __init__(self, lot_size_categories=False, derived_binary_features=None):
         self.lot_size_categories = lot_size_categories
+        self.derived_binary_features = derived_binary_features
 
     def fit(self, X, y=None):
         return self
 
     def transform(self, X):
-        cleaned = X.copy()
+        cleaned = derive_binary_features(X, self.derived_binary_features or {})
         # All negative numeric values are survey missing codes, including codes
         # in categorical/object columns. Preserve ordinary text category values.
         for column in cleaned.columns:

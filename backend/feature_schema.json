@@ -1,7 +1,448 @@
 {
-  "UNITSIZE": {"label": "Living Space", "input_type": "number", "required": false, "min": 0, "step": 1, "help": "Current dataset values are codes 1–9; square-foot measurements are not yet confirmed."},
-  "BEDROOMS": {"label": "Bedrooms", "input_type": "number", "required": false, "min": 0, "step": 1},
-  "BATHROOMS": {"label": "Bathrooms", "input_type": "number", "required": false, "min": 0, "step": 1},
-  "YRBUILT": {"label": "Year Built", "input_type": "number", "required": false, "min": 1800, "step": 1},
-  "LOTSIZE": {"label": "Lot Size", "input_type": "select", "required": false, "options": [1, 2, 3, 4, 5, 6, 7], "help": "AHS lot-size category code (1–7)."}
+  "UNITSIZE": {
+    "label": "Home Size",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Less than 500 sq. ft."
+      },
+      {
+        "value": 2,
+        "label": "500–749 sq. ft."
+      },
+      {
+        "value": 3,
+        "label": "750–999 sq. ft."
+      },
+      {
+        "value": 4,
+        "label": "1,000–1,499 sq. ft."
+      },
+      {
+        "value": 5,
+        "label": "1,500–1,999 sq. ft."
+      },
+      {
+        "value": 6,
+        "label": "2,000–2,499 sq. ft."
+      },
+      {
+        "value": 7,
+        "label": "2,500–2,999 sq. ft."
+      },
+      {
+        "value": 8,
+        "label": "3,000–3,999 sq. ft."
+      },
+      {
+        "value": 9,
+        "label": "4,000 sq. ft. or more"
+      }
+    ]
+  },
+  "BEDROOMS": {
+    "label": "Bedrooms",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 0,
+        "label": "No bedrooms"
+      },
+      {
+        "value": 1,
+        "label": "1 bedroom"
+      },
+      {
+        "value": 2,
+        "label": "2 bedrooms"
+      },
+      {
+        "value": 3,
+        "label": "3 bedrooms"
+      },
+      {
+        "value": 4,
+        "label": "4 bedrooms"
+      },
+      {
+        "value": 5,
+        "label": "5 bedrooms"
+      },
+      {
+        "value": 6,
+        "label": "6 bedrooms"
+      }
+    ]
+  },
+  "BATHROOMS": {
+    "label": "Bathrooms",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "1 bathroom"
+      },
+      {
+        "value": 2,
+        "label": "1.5 bathrooms"
+      },
+      {
+        "value": 3,
+        "label": "2 bathrooms"
+      },
+      {
+        "value": 4,
+        "label": "2.5 bathrooms"
+      },
+      {
+        "value": 5,
+        "label": "3 bathrooms"
+      },
+      {
+        "value": 6,
+        "label": "More than 3 bathrooms"
+      },
+      {
+        "value": 7,
+        "label": "No complete bathroom — sink and tub present"
+      },
+      {
+        "value": 8,
+        "label": "No complete bathroom — sink and toilet present"
+      },
+      {
+        "value": 9,
+        "label": "No complete bathroom — tub and toilet present"
+      },
+      {
+        "value": 10,
+        "label": "Sink only"
+      },
+      {
+        "value": 11,
+        "label": "Tub only"
+      },
+      {
+        "value": 12,
+        "label": "Toilet only"
+      },
+      {
+        "value": 13,
+        "label": "No sink, bathtub/shower, or toilet"
+      }
+    ]
+  },
+  "YRBUILT": {
+    "label": "Year Built",
+    "input_type": "number",
+    "required": false,
+    "min": 1800,
+    "step": 1
+  },
+  "LOTSIZE": {
+    "label": "Lot Size",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Less than 1/8 acre"
+      },
+      {
+        "value": 2,
+        "label": "1/8 up to 1/4 acre"
+      },
+      {
+        "value": 3,
+        "label": "1/4 up to 1/2 acre"
+      },
+      {
+        "value": 4,
+        "label": "1/2 up to 1 acre"
+      },
+      {
+        "value": 5,
+        "label": "1 up to 5 acres"
+      },
+      {
+        "value": 6,
+        "label": "5 up to 10 acres"
+      },
+      {
+        "value": 7,
+        "label": "10 acres or more"
+      }
+    ]
+  },
+  "MONOXIDE": {
+    "label": "Carbon Monoxide Detector",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 2,
+        "label": "No"
+      }
+    ]
+  },
+  "SMOKALRM": {
+    "label": "Smoke Alarm",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 2,
+        "label": "No"
+      }
+    ]
+  },
+  "SOLAR": {
+    "label": "Solar Panels",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 2,
+        "label": "No"
+      }
+    ]
+  },
+  "DRYER": {
+    "label": "Clothes Dryer",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Electric"
+      },
+      {
+        "value": 2,
+        "label": "Piped gas"
+      },
+      {
+        "value": 3,
+        "label": "Bottled gas"
+      },
+      {
+        "value": 4,
+        "label": "Other"
+      }
+    ]
+  },
+  "FRIDGE": {
+    "label": "Refrigerator",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 2,
+        "label": "No"
+      }
+    ]
+  },
+  "DISHWASH": {
+    "label": "Dishwasher",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 2,
+        "label": "No"
+      }
+    ]
+  },
+  "RATINGNH": {
+    "label": "Overall Neighborhood Rating",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "1 — Worst"
+      },
+      {
+        "value": 2,
+        "label": "2"
+      },
+      {
+        "value": 3,
+        "label": "3"
+      },
+      {
+        "value": 4,
+        "label": "4"
+      },
+      {
+        "value": 5,
+        "label": "5"
+      },
+      {
+        "value": 6,
+        "label": "6"
+      },
+      {
+        "value": 7,
+        "label": "7"
+      },
+      {
+        "value": 8,
+        "label": "8"
+      },
+      {
+        "value": 9,
+        "label": "9"
+      },
+      {
+        "value": 10,
+        "label": "10 — Best"
+      }
+    ]
+  },
+  "RATINGHS": {
+    "label": "Overall Home Rating",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "1 — Worst"
+      },
+      {
+        "value": 2,
+        "label": "2"
+      },
+      {
+        "value": 3,
+        "label": "3"
+      },
+      {
+        "value": 4,
+        "label": "4"
+      },
+      {
+        "value": 5,
+        "label": "5"
+      },
+      {
+        "value": 6,
+        "label": "6"
+      },
+      {
+        "value": 7,
+        "label": "7"
+      },
+      {
+        "value": 8,
+        "label": "8"
+      },
+      {
+        "value": 9,
+        "label": "9"
+      },
+      {
+        "value": 10,
+        "label": "10 — Best"
+      }
+    ]
+  },
+  "GARAGE": {
+    "label": "Garage or Carport",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 2,
+        "label": "No"
+      }
+    ]
+  },
+  "WASHER_PRESENT": {
+    "label": "Washing Machine",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 0,
+        "label": "No"
+      }
+    ]
+  },
+  "PORCH_PRESENT": {
+    "label": "Porch, Deck, Balcony, or Patio",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 0,
+        "label": "No"
+      }
+    ]
+  },
+  "FIREPLACE_PRESENT": {
+    "label": "Usable Fireplace",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 0,
+        "label": "No"
+      }
+    ]
+  },
+  "DINING_PRESENT": {
+    "label": "Separate Dining Room",
+    "input_type": "select",
+    "required": false,
+    "options": [
+      {
+        "value": 1,
+        "label": "Yes"
+      },
+      {
+        "value": 0,
+        "label": "No"
+      }
+    ]
+  }
 }

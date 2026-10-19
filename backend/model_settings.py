@@ -7,7 +7,29 @@ from pathlib import Path
 import pandas as pd
 
 
-def read_dataset(path):
+def derive_binary_features(data, definitions):
+    """Replace configured source columns in CSV order; preserve missing values.
+
+    Already-derived API inputs are validated, never recoded as source AHS codes.
+    This makes the transformation safe to repeat inside the saved pipeline.
+    """
+    data = data.copy()
+    for name, definition in definitions.items():
+        source = definition["source"]
+        if source in data:
+            if name in data:
+                raise ValueError(f"Supply either '{source}' or '{name}', not both.")
+            values = pd.to_numeric(data[source], errors="coerce")
+            valid = values.ge(0) & values.map(lambda value: pd.notna(value) and math.isfinite(value))
+            data[source] = values.isin(definition["yes_values"]).astype(float).where(valid)
+            data = data.rename(columns={source: name})
+        elif name in data:
+            values = pd.to_numeric(data[name], errors="coerce")
+            data[name] = values.where(values.isin([0, 1]))
+    return data
+
+
+def read_dataset(path, derived_binary_features=None):
     data = pd.read_csv(path)
     # Support ordinary CSV quoting and apostrophe-wrapped AHS export codes.
     for column in data.select_dtypes(include="object"):
@@ -17,7 +39,7 @@ def read_dataset(path):
         present = data[column].dropna()
         if pd.to_numeric(present, errors="coerce").notna().all():
             data[column] = pd.to_numeric(data[column])
-    return data
+    return derive_binary_features(data, derived_binary_features or {})
 
 
 def load_config(path, data_path=None):
@@ -29,7 +51,23 @@ def load_config(path, data_path=None):
     if not isinstance(target, str) or not target or target == control:
         raise ValueError("Specify distinct target and control column names.")
     data_path = Path(data_path) if data_path is not None else path.parent.parent / "data" / config["data_file"]
-    data = read_dataset(data_path)
+    definitions = config.get("derived_binary_features", {})
+    if not isinstance(definitions, dict):
+        raise ValueError("derived_binary_features must be an object.")
+    sources = set()
+    for name, definition in definitions.items():
+        if (not isinstance(name, str) or not name or name in (target, control)
+                or not isinstance(definition, dict)):
+            raise ValueError("Each derived binary feature requires a name and definition.")
+        source, yes = definition.get("source"), definition.get("yes_values")
+        if (not isinstance(source, str) or not source or source == name
+                or source in (target, control) or source in sources or source in definitions
+                or not isinstance(yes, list) or not yes
+                or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                       or not math.isfinite(value) or value < 0 for value in yes)):
+            raise ValueError(f"Invalid source or yes_values for '{name}'.")
+        sources.add(source)
+    data = read_dataset(data_path, definitions)
     if target not in data:
         raise ValueError(f"Target '{target}' is missing from {data_path.name}.")
     predictors = [name for name in data.columns if name not in (target, control)]
