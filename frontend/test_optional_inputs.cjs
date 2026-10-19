@@ -95,6 +95,10 @@ const context = vm.createContext({
   Option: function(text, value) { this.text = text; this.value = value; },
   Intl, AbortController, setTimeout, clearTimeout, console,
   fetch: async (url, options) => {
+    const endpoint = new URL(url);
+    assert.equal(endpoint.origin, "https://housing-predictor-uz14.onrender.com");
+    assert.equal(endpoint.pathname, options?.method === "POST" ? "/predict" : "/model-info",
+      "Production endpoint paths must not contain duplicate slashes.");
     const response = options?.method === "POST" ? await (async () => {
       const payload = JSON.parse(options.body);
       requests.push(payload);

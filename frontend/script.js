@@ -1,11 +1,11 @@
 "use strict";
 
 // The API supplies the only predictor list and its display metadata.
-// Replace this one value with the live Render service URL before publishing Pages.
-const API_BASE = "https://YOUR-RENDER-SERVICE.onrender.com";
-const API_URL = `${API_BASE}/predict`;
+// Production API origin: keep this value free of a trailing slash.
+const API_BASE_URL = "https://housing-predictor-uz14.onrender.com";
+const API_URL = `${API_BASE_URL}/predict`;
 // Temporary diagnostics while investigating frontend startup/request failures.
-console.info("[Housing] Page initialization", { apiBase: API_BASE });
+console.info("[Housing] Page initialization", { apiBase: API_BASE_URL });
 let predictors = [];
 const form = document.querySelector("#prediction-form");
 const button = document.querySelector("#predict-button");
@@ -113,7 +113,7 @@ async function loadFields() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(`${API_BASE}/model-info`, { signal: controller.signal, cache: "no-store" });
+    const response = await fetch(`${API_BASE_URL}/model-info`, { signal: controller.signal, cache: "no-store" });
     const data = await response.json().catch(() => null);
     console.info("[Housing] /model-info response", { status: response.status, data });
     if (!response.ok) throw new Error(data?.error || `Unable to load form (HTTP ${response.status}).`);
@@ -352,7 +352,7 @@ form.addEventListener("submit", async (event) => {
     errorMessage.textContent = error.name === "AbortError"
       ? "The request timed out. Check that the backend is running and try again."
       : error instanceof TypeError
-        ? `Could not connect to the API at ${API_BASE}. Check the service URL and try again.`
+        ? `Could not connect to the API at ${API_BASE_URL}. Check the service URL and try again.`
         : error.message;
     errorMessage.hidden = false;
     statusMessage.textContent = "No estimate available. Please try again.";

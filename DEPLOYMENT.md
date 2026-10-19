@@ -41,15 +41,17 @@ Also commit `.gitignore`, `.python-version`, `render.yaml`, `DEPLOYMENT.md`, `ba
 
 ## GitHub Pages frontend
 
-The only backend URL setting is `API_BASE` near the top of `frontend/script.js`. It currently contains the requested placeholder:
+The only backend URL setting is `API_BASE_URL` near the top of `frontend/script.js`:
 
 ```js
-const API_BASE = "https://YOUR-RENDER-SERVICE.onrender.com";
+const API_BASE_URL = "https://housing-predictor-uz14.onrender.com";
 ```
 
-After Render provides the live URL, replace that value with the service's HTTPS origin, without a trailing slash. Both `/model-info` and `/predict` derive from it; production requests never use localhost. The placeholder intentionally cannot serve predictions until replaced. For local development, temporarily change this same constant to your local API origin and restore the HTTPS value before publication.
+The origin has no trailing slash. Both `/model-info` and `/predict` derive from this constant; production requests never use localhost.
 
-Commit `.github/workflows/pages.yml`. It publishes only `frontend/` (not model/data files) and has **only a manual `workflow_dispatch` trigger**. It refuses to publish while API_BASE is the placeholder, localhost, or non-HTTPS. When ready, select **Settings → Pages → Source: GitHub Actions**, then manually run the workflow. Nothing runs or deploys just because these files were prepared.
+Commit `.github/workflows/deploy-pages.yml`. It publishes only `frontend/` (not model/data files), uses the official GitHub Pages actions, and runs on pushes to `main` or manual dispatch. There is no frontend build step. The former manual-only `pages.yml` workflow has been replaced to avoid duplicate Pages deployments.
+
+In the repository, select **Settings → Pages → Build and deployment → Source: GitHub Actions**. Do not select a branch/folder publishing source or create an additional Jekyll workflow. Under **Settings → Actions → General**, allow the official GitHub actions used by the workflow if repository/organization policy restricts them. If the `github-pages` environment restricts deployment branches, permit `main`. Push the prepared files to `main` when ready; that push triggers deployment. No push or deployment was performed during preparation.
 
 The resulting project site should be `https://manofsteelix2.github.io/Housing-Predictor/`. All frontend asset references are relative, so the repository path works without rewriting links.
 
@@ -60,6 +62,6 @@ python -B -m unittest discover -s backend -p test_deployment.py
 node frontend/test_optional_inputs.cjs
 ```
 
-The frontend test uses the actual Flask test client through a local Python process; set the PYTHON environment variable if the `python` executable is not on PATH. It does not contact or deploy the Render placeholder. After deployment, check `/health`, `/model-info`, a browser prediction, the response's prediction interval, and the Pages-origin CORS preflight.
+The frontend test uses the actual Flask test client through a local Python process; set the PYTHON environment variable if the `python` executable is not on PATH. It checks production request URLs but sends prediction requests through the local Flask test client; it does not deploy anything. After deployment, check `/health`, `/model-info`, a browser prediction, the response's prediction interval, and the Pages-origin CORS preflight.
 
 References: [Render Flask deployment](https://render.com/docs/deploy-flask), [Render monorepo roots](https://render.com/docs/monorepo-support), [GitHub Pages custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
