@@ -47,8 +47,14 @@ class Element {
   add(option) { this.children.push(option); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(name, value) { this.attributes[name] = value; }
+  getAttribute(name) { return this.attributes[name] ?? null; }
+  get options() { return this.children; }
+  click() { this.listeners.click?.({ target: this }); }
   removeAttribute(name) { delete this.attributes[name]; }
-  addEventListener(name, handler) { this.listeners[name] = handler; }
+  addEventListener(name, handler) {
+    const previous = this.listeners[name];
+    this.listeners[name] = event => { previous?.(event); return handler(event); };
+  }
   dispatchEvent(event) {
     event.target = this;
     this.listeners[event.type]?.(event);
@@ -60,7 +66,9 @@ class Element {
 const nodes = new Map();
 for (const id of ["prediction-form", "predict-button", "error-message", "prediction-result",
   "result-status", "predicted-value", "form-status", "predictor-fields", "model-target-range",
-  "prediction-interval", "prediction-interval-value"]) nodes.set(`#${id}`, new Element());
+  "prediction-interval", "prediction-interval-value", "reset-button", "field-counter",
+  "result-details", "result-count", "result-division", "region-caption"]) nodes.set(`#${id}`, new Element());
+const body = new Element();
 function controls(element) {
   return (element.children ?? []).flatMap(child => [child, ...controls(child)]).filter(child => child.name);
 }
@@ -70,11 +78,17 @@ form.elements = { namedItem: name => fields().find(field => field.name === name)
 form.querySelectorAll = () => [...fields(), nodes.get("#predict-button")];
 const info = await api("GET");
 assert.equal(info.status, 200);
+const modelPredictorCount = info.body.features.length;
+if (process.env.HOUSING_TEST_MINIMAL === "1") {
+  // A valid active model can omit all map, binary, and rating predictors.
+  info.body.features = info.body.features.filter(field => field.name === "YRBUILT")
+    .map(field => ({ ...field, group: "unrecognized-display-group" }));
+}
 assert.ok(info.body.features.every(field => field.required === false));
 const requests = [];
 let responseOverride;
 const context = vm.createContext({
-  document: { querySelector: selector => nodes.get(selector),
+  document: { body, querySelector: selector => nodes.get(selector),
     createElement: () => new Element(), createElementNS: () => new Element(),
     createDocumentFragment: () => new Element() },
   Event: class { constructor(type, options = {}) { this.type = type; this.bubbles = options.bubbles; } },
@@ -92,7 +106,11 @@ const context = vm.createContext({
     return { ok: response.status === 200, status: response.status, json: async () => response.body };
   },
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, "census-map.js"), "utf8"), context);
+if (process.env.HOUSING_TEST_MAP === "throw") {
+  vm.runInContext('function attachCensusDivisionMap() { throw new Error("Simulated unavailable map"); }', context);
+} else if (process.env.HOUSING_TEST_MAP !== "missing") {
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "census-map.js"), "utf8"), context);
+}
 vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), context);
   // Let asynchronous metadata loading finish before submitting.
   await new Promise(resolve => setImmediate(resolve));
@@ -102,10 +120,13 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   assert.ok(nodes.get("#model-target-range").textContent.includes(currency.format(info.body.target_min)));
   assert.ok(nodes.get("#model-target-range").textContent.includes(currency.format(info.body.target_max)));
   assert.ok(fields().every(field => field.required === false && !("required" in field.attributes)));
+  assert.equal(nodes.get("#field-counter").textContent, `0 of ${fields().length} characteristics provided`);
+  assert.equal(body.className, "theme-neutral");
   const descendants = element => (element.children ?? []).flatMap(child => [child, ...descendants(child)]);
   const states = descendants(nodes.get("#predictor-fields")).filter(node => node.attributes?.d);
-  assert.equal(states.length, 51, "50 states and DC are selectable");
   const division = form.elements.namedItem("DIVISION");
+  if (division && !process.env.HOUSING_TEST_MAP) {
+  assert.equal(states.length, 51, "50 states and DC are selectable");
   const divisionGroups = ["CT ME MA NH RI VT", "NJ NY PA", "IL IN MI OH WI",
     "IA KS MN MO NE ND SD", "DE FL GA MD NC SC VA WV DC", "AL KY MS TN",
     "AR LA OK TX", "AZ CO ID MT NV NM UT WY", "AK CA HI OR WA"];
@@ -114,6 +135,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
     members.forEach(code => {
       states.find(state => state.attributes["data-state"] === code).listeners.click();
       assert.equal(division.value, String(index + 1));
+      assert.equal(body.className, `theme-${info.body.features.find(field => field.name === "DIVISION")
+        .options[index].label.toLowerCase().replaceAll(" ", "-")}`);
       assert.deepEqual(states.filter(state => state.attributes["aria-pressed"] === "true")
         .map(state => state.attributes["data-state"]).sort(), [...members].sort());
     });
@@ -135,6 +158,11 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   division.listeners.change();
   assert.ok(states.every(state => state.attributes["aria-pressed"] === "false"));
   console.log("Passed: all state mappings, division highlighting, dropdown sync, keyboard and blank clearing.");
+  } else {
+    assert.equal(states.length, 0);
+    assert.equal(nodes.get("#predict-button").disabled, false,
+      "Missing model fields or map enhancements must not block the form.");
+  }
   for (const metadata of info.body.features.filter(field => field.input_type === "select")) {
     const input = form.elements.namedItem(metadata.name);
     assert.equal(input.children[0].text, "Not specified");
@@ -152,7 +180,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
       fields().forEach(input => { input.value = ""; });
       form.elements.namedItem(metadata.name).value = String(option.value);
       await form.listeners.submit({ preventDefault() {} });
-      assert.equal(requests.at(-1)[metadata.name], option.value);
+      assert.equal(requests.at(-1)[metadata.name], option.value,
+        `${metadata.name}: ${nodes.get("#error-message").textContent}`);
       assert.ok(Object.entries(requests.at(-1)).every(([name, value]) => name === metadata.name || value === null));
       assert.equal(nodes.get("#error-message").hidden, true);
     }
@@ -161,7 +190,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   for (const [label, filled] of [["all filled", fields().length], ["one blank", fields().length - 1],
     ["several blank", Math.max(1, fields().length - 4)], ["one filled", 1], ["all blank", 0]]) {
     fields().forEach((input, index) => {
-      const metadata = info.body.features[index];
+      const metadata = info.body.features.find(field => field.name === input.name);
       input.value = index < filled ? String(metadata.input_type === "select" ? (metadata.options[0].value ?? metadata.options[0])
         : metadata.min ?? 1) : "";
     });
@@ -169,6 +198,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
     await form.listeners.submit({ preventDefault() {} });
     assert.equal(requests.length, before + 1, label);
     assert.equal(Object.values(requests.at(-1)).filter(value => value !== null).length, filled, label);
+    assert.equal(nodes.get("#result-count").textContent, `${filled} of ${modelPredictorCount}`);
     assert.equal(nodes.get("#predicted-value").hidden, false, label);
     assert.equal(nodes.get("#prediction-interval").hidden, false, label);
     assert.match(nodes.get("#prediction-interval-value").textContent, /\$.* – \$/);
@@ -200,6 +230,30 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   assert.equal(nodes.get("#prediction-interval").hidden, true);
   assert.match(nodes.get("#error-message").textContent, /prediction range/);
   console.log("Passed: stale ranges cleared, legacy/malformed interval errors displayed.");
+  responseOverride = undefined;
+  for (const input of fields().filter(field => field.choiceButtons)) {
+    const metadata = info.body.features.find(field => field.name === input.name);
+    for (const [index, value] of [metadata.options[0].value, metadata.options[1].value, null].entries()) {
+      input.choiceButtons[index].click();
+      await form.listeners.submit({ preventDefault() {} });
+      assert.equal(requests.at(-1)[input.name], value);
+      assert.equal(input.choiceButtons[index].attributes["aria-checked"], "true");
+    }
+    input.choiceButtons[2].listeners.keydown({ key: "ArrowRight", preventDefault() {} });
+    assert.equal(input.value, String(metadata.options[0].value));
+    input.choiceButtons[0].listeners.keydown({ key: "ArrowLeft", preventDefault() {} });
+    assert.equal(input.value, "");
+  }
+  nodes.get("#reset-button").click();
+  assert.ok(fields().every(input => input.value === ""));
+  assert.equal(body.className, "theme-neutral");
+  assert.equal(nodes.get("#field-counter").textContent, `0 of ${fields().length} characteristics provided`);
+  assert.equal(nodes.get("#result-details").hidden, true);
+  assert.equal(nodes.get("#predicted-value").hidden, true);
+  assert.ok(states.every(state => state.attributes["aria-pressed"] === "false"));
+  assert.ok(fields().filter(input => input.choiceButtons).every(input =>
+    input.choiceButtons[2].attributes["aria-checked"] === "true"));
+  console.log("Passed: binary controls submit original codes, result counts, reset and neutral theme.");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; })
   .finally(() => backend.stdin.end());

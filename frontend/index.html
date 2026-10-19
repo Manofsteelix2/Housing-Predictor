@@ -3,50 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Housing Predictor</title>
+  <meta name="theme-color" content="#f7f4ec">
+  <title>AHS Home Value Estimator</title>
   <link rel="stylesheet" href="style.css">
   <script src="census-map.js" defer></script>
   <script src="script.js" defer></script>
 </head>
-<body>
+<body class="theme-neutral">
   <main class="page">
-    <header>
-      <p class="eyebrow">Housing Predictor</p>
-      <h1>A starting point for your home’s value.</h1>
-      <p class="intro">Enter the property details below to explore an estimate from our regression model.</p>
+    <nav class="masthead" aria-label="Page navigation">
+      <a class="brand" href="#top"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 15 16 5l12 10M8 13v14h16V13M13 27v-9h6v9"/></svg> HOME / VALUE</a>
+      <span class="edition">2023 AHS <span aria-hidden="true">·</span> An analytics exploration</span>
+    </nav>
+    <header class="hero" id="top">
+      <div class="hero-copy">
+        <p class="eyebrow">A little context. A clearer starting point.</p>
+        <h1>AHS Home Value <em>Estimator</em></h1>
+        <p class="intro">Estimate a home's value using characteristics from the 2023 American Housing Survey.</p>
+        <ol class="journey" aria-label="How it works"><li><span>01</span> Choose a region</li><li><span>02</span> Describe the home</li><li><span>03</span> Explore the estimate</li></ol>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 380 280" fill="none">
+          <circle cx="250" cy="91" r="51" class="art-sun"/>
+          <path d="M22 230Q100 177 191 221T364 221V275H22Z" class="art-land"/>
+          <path d="m98 147 76-68 79 68" class="art-roof"/>
+          <path d="M111 144v91h128v-91l-65-56z" class="art-house"/>
+          <path d="M160 235v-59h31v59M126 157h22v25h-22zM205 157h20v25h-20z" class="art-detail"/>
+          <path d="M231 119V89h-20v12" class="art-roof"/>
+          <g class="motif motif-default"><path d="M48 230v-61m0 35-17-21m17 8 18-26M316 233v-87m0 42-21-26m21 7 16-24"/></g>
+          <g class="motif motif-new-england"><path d="M48 231v-50m-20-6 20-25 20 25-20 25zM305 242q23-16 45 0m-40-12q19-15 39-1"/></g>
+          <g class="motif motif-middle-atlantic"><path d="M277 228v-91h24v91m0-9v-115h28v115m0 9v-68h22v68m-66-72h8m-8 20h8m16-40h12m-12 20h12m-12 20h12"/></g>
+          <g class="motif motif-east-north-central"><path d="m39 160-21 42h42zm0 18-26 42h52zm0 42v17m235 7q21-13 43 0t43 0m-77-13q20-12 41 0"/></g>
+          <g class="motif motif-west-north-central"><path d="M47 234v-77m0 25-12-12m12 29 12-12m-12 28-12-12m12-32 12-12M279 230q37-23 81 0M279 244h81"/></g>
+          <g class="motif motif-south-atlantic"><path d="M309 234q-9-48 0-74m0 0q-30-18-42 7m42-7q19-25 39-1m-39 1q-2-31-24-24m24 24q27-8 39 15M26 242q25-12 47 0"/></g>
+          <g class="motif motif-east-south-central"><path d="M22 234q23-49 65-13m173 5q42-48 98 0M307 148l-20 43h40zm0 23-25 40h50zm0 40v23"/></g>
+          <g class="motif motif-west-south-central"><path d="M281 229h70m-58-12h58M46 231v-54m0 21q-22 0-22-21v-10m22 45q20 0 20-20v-12"/></g>
+          <g class="motif motif-mountain"><path d="m254 222 49-102 55 102m-73-63 18 12 17-17M24 230l29-62 29 62M53 230v12"/></g>
+          <g class="motif motif-pacific"><path d="m264 210 38-69 48 69m-323 31q18-15 37 0t37 0m161-4q23-14 46 0t46 0m-83 16q19-11 39 0t39 0"/></g>
+        </svg>
+        <p id="region-caption">Every home has a story. Start with its region.</p>
+      </div>
     </header>
-
-    <div class="layout">
-      <section class="card" aria-labelledby="form-title">
-        <h2 id="form-title">Property details</h2>
-        <p class="muted">Fields are optional. Leave unknown details blank.</p>
-        <form id="prediction-form" novalidate>
-          <div id="predictor-fields" class="fields"></div>
-          <p id="form-status" class="muted" role="status">Loading property fields…</p>
-          <button id="predict-button" disabled type="submit">Predict Home Value <span aria-hidden="true">→</span></button>
-          <p id="error-message" class="error" role="alert" hidden></p>
-        </form>
-      </section>
-
-      <aside class="card result-card" aria-labelledby="result-title">
-        <p class="eyebrow">Your estimate</p>
-        <h2 id="result-title">Estimated Home Value</h2>
-        <p id="model-target-range" class="muted" hidden></p>
-        <div id="prediction-result" aria-live="polite" aria-atomic="true">
-          <p id="result-status" class="muted">Enter any known details, then request your estimate.</p>
-          <p id="predicted-value" class="price" hidden></p>
-          <div id="prediction-interval" class="interval" hidden>
-            <h3>95% Prediction Range</h3>
-            <p id="prediction-interval-value" class="interval-value"></p>
-            <p class="interval-note">This estimate is based on broad housing characteristics from the 2023 American Housing Survey and does not incorporate precise local market conditions.</p>
-            <p class="interval-note">The prediction range reflects uncertainty in the model and is calibrated to contain approximately 95% of comparable observed home values.</p>
-          </div>
+    <form id="prediction-form" novalidate>
+      <div id="predictor-fields"></div>
+      <p id="form-status" class="muted" role="status">Loading property fields…</p>
+      <div class="estimate-actions">
+        <div><p id="field-counter" class="counter" role="status" aria-live="polite">Loading characteristics…</p><p class="action-note">More information can help personalize the estimate.</p></div>
+        <button id="predict-button" disabled type="submit">Estimate Home Value <span aria-hidden="true">↗</span></button>
+      </div>
+      <p id="error-message" class="error" role="alert" hidden></p>
+    </form>
+    <section class="result-card" aria-labelledby="result-title">
+      <div class="result-heading"><p class="eyebrow">03 / Your starting point</p><span class="result-badge">2023 AHS model</span></div>
+      <h2 id="result-title">Estimated Home Value</h2>
+      <div id="prediction-result" aria-live="polite" aria-atomic="true">
+        <p id="result-status" class="muted">Your estimate will appear here. Share what you know about the home to get started.</p>
+        <p id="predicted-value" class="price" hidden></p>
+        <div id="prediction-interval" class="interval" hidden>
+          <div class="interval-heading"><h3>95% Prediction Range</h3><p id="prediction-interval-value" class="interval-value"></p></div>
+          <div class="range-decoration" aria-hidden="true"></div>
+          <p class="interval-note">The prediction range reflects uncertainty in the model and is calibrated to contain approximately 95% of comparable observed home values.</p>
         </div>
-        <p class="result-note">An exploratory estimate from a university analytics project. The current survey codes need further research before use with real property measurements.</p>
-      </aside>
-    </div>
-    <footer>Housing Predictor · Regression model preview</footer>
+        <dl id="result-details" class="result-details" hidden><div><dt>Characteristics provided</dt><dd id="result-count"></dd></div><div><dt>Selected Census Division</dt><dd id="result-division"></dd></div></dl>
+      </div>
+      <div class="result-footer"><p>Estimates reflect relationships found in the 2023 AHS data.</p><button id="reset-button" class="secondary-button" type="button" disabled>Reset / Try Another Home <span aria-hidden="true">↻</span></button></div>
+    </section>
+    <section class="methodology" aria-labelledby="method-title"><p class="eyebrow">A useful perspective, with limits</p><h2 id="method-title">An estimate, with room for uncertainty.</h2><p>This estimate is based on broad housing characteristics from the 2023 American Housing Survey and does not incorporate precise local market conditions.</p><p>The regression model uses the details you provide and fills missing characteristics using its fitted preprocessing. Census divisions describe broad regions; they do not capture a specific state, neighborhood, or street. The prediction range describes uncertainty across comparable homes, rather than a guarantee for an individual property.</p><p id="model-target-range" class="muted" hidden></p></section>
+    <footer><span class="brand">HOME / VALUE</span><span>University analytics project · 2023 American Housing Survey</span></footer>
   </main>
 </body>
 </html>
-

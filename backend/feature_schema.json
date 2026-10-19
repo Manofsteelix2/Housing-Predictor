@@ -40,7 +40,8 @@
         "value": 9,
         "label": "4,000 sq. ft. or more"
       }
-    ]
+    ],
+    "group": "layout"
   },
   "BEDROOMS": {
     "label": "Bedrooms",
@@ -75,7 +76,8 @@
         "value": 6,
         "label": "6 bedrooms"
       }
-    ]
+    ],
+    "group": "layout"
   },
   "BATHROOMS": {
     "label": "Bathrooms",
@@ -134,14 +136,16 @@
         "value": 13,
         "label": "No sink, bathtub/shower, or toilet"
       }
-    ]
+    ],
+    "group": "layout"
   },
   "YRBUILT": {
     "label": "Year Built",
     "input_type": "number",
     "required": false,
     "min": 1800,
-    "step": 1
+    "step": 1,
+    "group": "layout"
   },
   "LOTSIZE": {
     "label": "Lot Size",
@@ -176,7 +180,8 @@
         "value": 7,
         "label": "10 acres or more"
       }
-    ]
+    ],
+    "group": "layout"
   },
   "MONOXIDE": {
     "label": "Carbon Monoxide Detector",
@@ -191,7 +196,8 @@
         "value": 2,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "SMOKALRM": {
     "label": "Smoke Alarm",
@@ -206,7 +212,8 @@
         "value": 2,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "SOLAR": {
     "label": "Solar Panels",
@@ -221,7 +228,8 @@
         "value": 2,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "DRYER": {
     "label": "Clothes Dryer",
@@ -244,7 +252,8 @@
         "value": 4,
         "label": "Other"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "FRIDGE": {
     "label": "Refrigerator",
@@ -259,7 +268,8 @@
         "value": 2,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "DISHWASH": {
     "label": "Dishwasher",
@@ -274,7 +284,8 @@
         "value": 2,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "RATINGNH": {
     "label": "Overall Neighborhood Rating",
@@ -321,7 +332,8 @@
         "value": 10,
         "label": "10 — Best"
       }
-    ]
+    ],
+    "group": "quality"
   },
   "RATINGHS": {
     "label": "Overall Home Rating",
@@ -368,7 +380,8 @@
         "value": 10,
         "label": "10 — Best"
       }
-    ]
+    ],
+    "group": "quality"
   },
   "GARAGE": {
     "label": "Garage or Carport",
@@ -383,7 +396,8 @@
         "value": 2,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "WASHER_PRESENT": {
     "label": "Washing Machine",
@@ -398,7 +412,8 @@
         "value": 0,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "PORCH_PRESENT": {
     "label": "Porch, Deck, Balcony, or Patio",
@@ -413,7 +428,8 @@
         "value": 0,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "FIREPLACE_PRESENT": {
     "label": "Usable Fireplace",
@@ -428,7 +444,8 @@
         "value": 0,
         "label": "No"
       }
-    ]
+    ],
+    "group": "amenities"
   },
   "DINING_PRESENT": {
     "label": "Separate Dining Room",
@@ -443,7 +460,8 @@
         "value": 0,
         "label": "No"
       }
-    ]
+    ],
+    "group": "layout"
   },
   "DIVISION": {
     "label": "Census Division",
@@ -556,6 +574,7 @@
           "WA"
         ]
       }
-    ]
+    ],
+    "group": "location"
   }
 }
