@@ -1,0 +1,15 @@
+# Prepared only; importing this Blueprint later creates the service.
+# Keep the repository root: data/housingG.csv is outside backend/.
+services:
+  - type: web
+    name: housing-predictor-api
+    runtime: python
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.8
+      - key: CORS_ORIGINS
+        value: https://manofsteelix2.github.io

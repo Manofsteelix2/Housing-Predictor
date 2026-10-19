@@ -1,0 +1,38 @@
+name: Publish frontend to GitHub Pages (manual)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Require a configured HTTPS backend URL
+        run: |
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const source = fs.readFileSync('frontend/script.js', 'utf8');
+          const base = source.match(/const API_BASE = "([^"]+)";/)?.[1];
+          if (!base || !base.startsWith('https://') || base.includes('YOUR-RENDER-SERVICE') || /localhost|127\.0\.0\.1/.test(base)) {
+            throw new Error('Set API_BASE in frontend/script.js to the live HTTPS Render URL first.');
+          }
+          JS
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: frontend
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

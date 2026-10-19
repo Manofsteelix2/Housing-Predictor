@@ -3,6 +3,7 @@
 import json
 import hashlib
 import math
+import os
 from numbers import Real
 from pathlib import Path
 
@@ -20,7 +21,10 @@ BACKEND_DIR = Path(__file__).resolve().parent
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)  # Allow the future frontend to call this API from another origin.
+    app.config["DEBUG"] = False
+    # CORS uses origins only: a GitHub Pages project path is not part of its origin.
+    origins = os.environ.get("CORS_ORIGINS", "https://manofsteelix2.github.io,http://127.0.0.1:8000,http://localhost:8000")
+    CORS(app, origins=[origin.strip() for origin in origins.split(",") if origin.strip()])
 
     # Load configuration and the complete fitted pipeline once, at startup.
     config = load_config(BACKEND_DIR / "model_config.json")
@@ -206,4 +210,6 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    # Render uses Gunicorn; this also respects hosted PORT for direct execution.
+    app.run(host="0.0.0.0" if os.environ.get("PORT") else "127.0.0.1",
+            port=int(os.environ.get("PORT", "5000")), debug=False)

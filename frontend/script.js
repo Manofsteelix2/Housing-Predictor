@@ -1,7 +1,8 @@
 "use strict";
 
 // The API supplies the only predictor list and its display metadata.
-const API_BASE = "http://127.0.0.1:5000";
+// Replace this one value with the live Render service URL before publishing Pages.
+const API_BASE = "https://YOUR-RENDER-SERVICE.onrender.com";
 const API_URL = `${API_BASE}/predict`;
 // Temporary diagnostics while investigating frontend startup/request failures.
 console.info("[Housing] Page initialization", { apiBase: API_BASE });
@@ -351,7 +352,7 @@ form.addEventListener("submit", async (event) => {
     errorMessage.textContent = error.name === "AbortError"
       ? "The request timed out. Check that the backend is running and try again."
       : error instanceof TypeError
-        ? "Could not connect to the API. Check that Flask is running at http://127.0.0.1:5000 and try again."
+        ? `Could not connect to the API at ${API_BASE}. Check the service URL and try again.`
         : error.message;
     errorMessage.hidden = false;
     statusMessage.textContent = "No estimate available. Please try again.";

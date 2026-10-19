@@ -1,7 +1,9 @@
-numpy>=1.24,<3
-pandas>=2.0,<3
-scikit-learn>=1.2,<2
-joblib>=1.2,<2
-matplotlib>=3.7,<4
-Flask>=3.0,<4
-flask-cors>=4.0,<7
+# Match the environment used to save the fitted sklearn pipeline.
+numpy==2.5.3
+pandas==2.3.3
+scikit-learn==1.9.1
+joblib==1.6.0
+matplotlib==3.11.2
+Flask==3.1.3
+flask-cors==6.0.5
+gunicorn==26.2.0; sys_platform != "win32"
