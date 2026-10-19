@@ -1,6 +1,7 @@
 """Run with python -B -m unittest discover -s backend -p test_missingness.py."""
 
 import contextlib
+import copy
 import io
 import json
 from pathlib import Path
@@ -15,10 +16,24 @@ from sklearn.model_selection import train_test_split
 
 from model_settings import load_config
 from housing_preprocessing import HousingCodeCleaner
-from train_model import build_pipeline, load_data, select_predictors, train_model
+from train_model import build_pipeline, calibrate_prediction_interval, load_data, select_predictors, train_model
 
 
 class MissingnessTests(unittest.TestCase):
+    def test_finite_sample_conformal_quantile(self):
+        calibration = calibrate_prediction_interval(np.arange(1, 41), np.zeros(40))
+        self.assertEqual(calibration["quantile_rank"], 39)  # ceil(41 * .95)
+        self.assertEqual(calibration["conformal_residual_quantile"], 39)
+        self.assertEqual(calibration["calibration_sample_size"], 40)
+        self.assertEqual(calibration["coverage_level"], .95)
+        self.assertEqual(calibration["method"], "split_conformal_absolute_residual")
+        self.assertEqual(calibrate_prediction_interval(np.arange(19), np.zeros(19))
+                         ["conformal_residual_quantile"], 18)
+        with self.assertRaisesRegex(ValueError, "19 calibration"):
+            calibrate_prediction_interval(np.arange(18), np.zeros(18))
+        with self.assertRaisesRegex(ValueError, "finite"):
+            calibrate_prediction_interval([np.nan] * 20, np.zeros(20))
+
     def test_target_range_validation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -101,26 +116,26 @@ class MissingnessTests(unittest.TestCase):
             data_path = root / "data" / "sample.csv"
             config_path = backend / "model_config.json"
             settings = {"target": "MARKETVAL", "data_file": "sample.csv", "target_transform": "log1p",
-                        "target_min": 1000, "target_max": 1975,
+                        "target_min": 1000, "target_max": 3975,
                         "feature_types": {"CODE": "categorical"}, "max_missing_fraction": 0.75,
                         "add_missing_indicators": True}
             config_path.write_text(json.dumps(settings), encoding="utf8")
             data = pd.DataFrame({
-                "CONTROL": range(40), "MARKETVAL": [1000 + i * 25 for i in range(40)],
-                "A": [i if i % 2 else np.nan for i in range(40)],
-                "B": [np.nan if i % 2 else i for i in range(40)],
-                "CODE": [np.nan if i % 3 == 0 else i % 2 for i in range(40)],
-                "SPARSE": [np.nan] * 39 + [1.],
+                "CONTROL": range(120), "MARKETVAL": [1000 + i * 25 for i in range(120)],
+                "A": [i if i % 2 else np.nan for i in range(120)],
+                "B": [np.nan if i % 2 else i for i in range(120)],
+                "CODE": [np.nan if i % 3 == 0 else i % 2 for i in range(120)],
+                "SPARSE": [np.nan] * 119 + [1.],
             })
             # Invalid targets are never imputed; every valid target survives, even
             # though no row has a complete set of predictors.
-            data.loc[40] = [40, np.nan, 1, 1, 1, 1]
-            data.loc[41] = [41, 0, 1, 1, 1, 1]
-            data.loc[42] = [42, np.inf, 1, 1, 1, 1]
-            data.loc[43] = [43, -5, 1, 1, 1, 1]
-            data.loc[44] = [44, "invalid", 1, 1, 1, 1]
-            data.loc[45] = [45, 999, 1, 1, 1, 1]
-            data.loc[46] = [46, 1976, 1, 1, 1, 1]
+            data.loc[120] = [120, np.nan, 1, 1, 1, 1]
+            data.loc[121] = [121, 0, 1, 1, 1, 1]
+            data.loc[122] = [122, np.inf, 1, 1, 1, 1]
+            data.loc[123] = [123, -5, 1, 1, 1, 1]
+            data.loc[124] = [124, "invalid", 1, 1, 1, 1]
+            data.loc[125] = [125, 999, 1, 1, 1, 1]
+            data.loc[126] = [126, 3976, 1, 1, 1, 1]
             data.loc[1, "A"] = -99
             data.loc[2, "CODE"] = -6
             data.to_csv(data_path, index=False)
@@ -129,25 +144,40 @@ class MissingnessTests(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 features, target = load_data(data_path, config)
                 model, metrics = train_model(data_path, config_path, backend / "model.pkl", backend / "plots")
-            self.assertEqual(len(target), 40)
+            self.assertEqual(len(target), 120)
             self.assertEqual(target.min(), 1000)  # Both range endpoints survive.
-            self.assertEqual(target.max(), 1975)
+            self.assertEqual(target.max(), 3975)
             self.assertIn("Excluded 1 observations below $1,000.", output.getvalue())
-            self.assertIn("Excluded 1 observations above $1,975.", output.getvalue())
+            self.assertIn("Excluded 1 observations above $3,975.", output.getvalue())
             self.assertIn("not missing-data cleaning", output.getvalue())
-            self.assertEqual(len(features), 40)
+            self.assertEqual(len(features), 120)
             self.assertTrue(pd.isna(features.loc[1, "A"]))
             self.assertTrue(pd.isna(features.loc[2, "CODE"]))
             self.assertTrue(features.isna().any(axis=1).all())
             self.assertTrue(all(np.isfinite(value) for value in metrics.values()))
             saved = joblib.load(backend / "model.pkl")
             self.assertEqual(saved.training_metadata_["target_min"], 1000)
-            self.assertEqual(saved.training_metadata_["target_max"], 1975)
+            self.assertEqual(saved.training_metadata_["target_max"], 3975)
             self.assertEqual(saved.training_metadata_["final_predictors"], ["A", "B", "CODE"])
             self.assertEqual(saved.training_metadata_["excluded_predictors"], ["SPARSE"])
-            training, _ = train_test_split(features, test_size=0.2, random_state=42)
+            remaining, test = train_test_split(features, test_size=0.2, random_state=42)
+            training, calibration = train_test_split(remaining, test_size=0.25, random_state=43)
+            self.assertFalse(set(training.index) & set(calibration.index))
+            self.assertFalse(set(training.index) & set(test.index))
+            self.assertFalse(set(calibration.index) & set(test.index))
+            self.assertEqual(len(training) + len(calibration) + len(test), len(features))
             imputer = saved.named_steps["preprocessor"].named_transformers_["numeric"].named_steps["imputer"]
             np.testing.assert_allclose(imputer.statistics_, training[["A", "B"]].median())
+            final = saved.training_metadata_["final_predictors"]
+            expected = calibrate_prediction_interval(target.loc[calibration.index], saved.predict(calibration[final]))
+            self.assertEqual(saved.training_metadata_["prediction_interval"], expected)
+            test_predictions = saved.predict(test[final])
+            q = expected["conformal_residual_quantile"]
+            lower, upper = np.maximum(0, test_predictions - q), test_predictions + q
+            evaluation = saved.training_metadata_["prediction_interval_test_evaluation"]
+            self.assertAlmostEqual(evaluation["observed_coverage"],
+                                   np.mean((target.loc[test.index] >= lower) & (target.loc[test.index] <= upper)))
+            self.assertAlmostEqual(evaluation["average_interval_width"], np.maximum(0, upper - lower).mean())
             self.assertIn("rows retained", output.getvalue())
             import app as api
             with patch.object(api, "BACKEND_DIR", backend):
@@ -155,7 +185,8 @@ class MissingnessTests(unittest.TestCase):
                 info = client.get("/model-info")
                 self.assertEqual(info.status_code, 200, info.json)
                 self.assertEqual(info.json["target_min"], 1000)
-                self.assertEqual(info.json["target_max"], 1975)
+                self.assertEqual(info.json["target_max"], 3975)
+                self.assertEqual(info.json["prediction_interval"], expected)
                 self.assertEqual([field["name"] for field in info.json["features"]], ["A", "B", "CODE"])
                 self.assertTrue(all(field["required"] is False for field in info.json["features"]))
                 for payload in ({}, {"A": 3}, {"CODE": 1}, {"CODE": ""}, {"SPARSE": {"invalid": True}}):
@@ -163,15 +194,33 @@ class MissingnessTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 200, response.json)
                     self.assertTrue(np.isfinite(response.json["predicted_value"]))
                     self.assertEqual(response.json["predictors_total"], 3)
+                    bounds = response.json["prediction_interval_95"]
+                    self.assertAlmostEqual(bounds["lower"], max(0, response.json["predicted_value"] - q))
+                    self.assertAlmostEqual(bounds["upper"], response.json["predicted_value"] + q)
                 self.assertEqual(response.json["predictors_ignored"], ["SPARSE"])
                 self.assertEqual(response.json["target_min"], 1000)
-                self.assertEqual(response.json["target_max"], 1975)
+                self.assertEqual(response.json["target_max"], 3975)
                 negative = client.post("/predict", json={"A": -99, "CODE": -6})
                 missing = client.post("/predict", json={})
                 self.assertEqual(negative.status_code, 200, negative.json)
                 self.assertAlmostEqual(negative.json["predicted_value"], missing.json["predicted_value"])
                 self.assertEqual(client.post("/predict", json={"CODE": "invalid"}).status_code, 400)
                 self.assertEqual(client.get("/health").status_code, 200)
+                # Legacy metadata must not silently produce an uncalibrated estimate.
+                legacy = copy.deepcopy(saved)
+                del legacy.training_metadata_["prediction_interval"]
+                with patch.object(api.joblib, "load", return_value=legacy):
+                    legacy_client = api.create_app().test_client()
+                legacy_response = legacy_client.post("/predict", json={})
+                self.assertEqual(legacy_response.status_code, 503)
+                self.assertIn("Retrain", legacy_response.json["error"])
+                self.assertEqual(legacy_client.get("/health").status_code, 200)
+                # Lower bound clipping is applied using the stored calibration only.
+                wide = copy.deepcopy(saved)
+                wide.training_metadata_["prediction_interval"]["conformal_residual_quantile"] = 1e9
+                with patch.object(api.joblib, "load", return_value=wide):
+                    wide_client = api.create_app().test_client()
+                self.assertEqual(wide_client.post("/predict", json={}).json["prediction_interval_95"]["lower"], 0)
 
 
 if __name__ == "__main__":

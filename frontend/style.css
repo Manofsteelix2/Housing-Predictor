@@ -25,6 +25,10 @@ button:hover { background: #163d2e; }
 button:disabled { opacity: .65; cursor: wait; }
 .result-card { background: #eaf0e4; position: sticky; top: 24px; }
 .price { font-size: clamp(2rem, 4vw, 2.7rem); font-weight: 750; letter-spacing: -.04em; overflow-wrap: anywhere; margin: 24px 0; }
+.interval { border-top: 1px solid #cbd8c4; padding-top: 20px; }
+.interval h3 { font-size: .95rem; font-weight: 650; margin: 0 0 8px; }
+.interval-value { font-size: 1.2rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; margin: 0 0 12px; }
+.interval-note { color: #52644f; font-size: .82rem; line-height: 1.65; margin: 10px 0 0; }
 .result-note { border-top: 1px solid #cbd8c4; padding-top: 20px; margin: 28px 0 0; color: #52644f; font-size: .82rem; line-height: 1.65; }
 .error { background: #fff0ec; color: #92291f; padding: 12px; border-radius: 8px; line-height: 1.5; font-size: .9rem; }
 footer { color: #596a63; font-size: .75rem; margin-top: 32px; }

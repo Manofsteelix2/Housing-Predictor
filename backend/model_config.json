@@ -1,6 +1,6 @@
 {
   "target": "MARKETVAL",
-  "data_file": "housingF.csv",
+  "data_file": "housingG.csv",
   "target_transform": "log1p",
   "target_min": 10000,
   "target_max": 3000000,

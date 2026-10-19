@@ -10,6 +10,8 @@ const errorMessage = document.querySelector("#error-message");
 const result = document.querySelector("#prediction-result");
 const statusMessage = document.querySelector("#result-status");
 const price = document.querySelector("#predicted-value");
+const predictionInterval = document.querySelector("#prediction-interval");
+const predictionIntervalValue = document.querySelector("#prediction-interval-value");
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 // Build accessible controls from backend configuration; use textContent so
@@ -99,6 +101,7 @@ form.addEventListener("input", (event) => {
   event.target.removeAttribute("aria-invalid");
   errorMessage.hidden = true;
   price.hidden = true;
+  predictionInterval.hidden = true;
   statusMessage.textContent = "Submit your property details to calculate an estimate.";
 });
 
@@ -107,6 +110,7 @@ form.addEventListener("submit", async (event) => {
   if (button.disabled) return;
   errorMessage.hidden = true;
   price.hidden = true;
+  predictionInterval.hidden = true;
 
   // Validate supplied values; only explicit schema overrides require a value.
   const payload = {};
@@ -160,9 +164,16 @@ form.addEventListener("submit", async (event) => {
     if (typeof data?.predicted_value !== "number" || !Number.isFinite(data.predicted_value)) {
       throw new Error("The API returned an invalid prediction. Please try again.");
     }
+    const interval = data.prediction_interval_95;
+    if (!interval || !Number.isFinite(interval.lower) || !Number.isFinite(interval.upper)
+        || interval.lower < 0 || interval.upper < interval.lower) {
+      throw new Error("The API returned no valid 95% prediction range. Retrain the model and restart Flask.");
+    }
     // Render API content as text and format dollar predictions for display.
     price.textContent = currency.format(data.predicted_value);
     price.hidden = false;
+    predictionIntervalValue.textContent = `${currency.format(interval.lower)} – ${currency.format(interval.upper)}`;
+    predictionInterval.hidden = false;
     statusMessage.textContent = "Estimated value based on the submitted details.";
   } catch (error) {
     errorMessage.textContent = error.name === "AbortError"

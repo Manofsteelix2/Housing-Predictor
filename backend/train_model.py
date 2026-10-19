@@ -32,6 +32,7 @@ DATA_PATH = BACKEND_DIR.parent / "data" / "housingG.csv"
 DATA_FILE = DATA_PATH
 MODEL_PATH = BACKEND_DIR / "model.pkl"
 DIAGNOSTICS_DIR = BACKEND_DIR / "diagnostics"
+INTERVAL_COVERAGE = 0.95
 
 
 def load_data(path, config):
@@ -231,6 +232,23 @@ def select_predictors(features, training_features, config):
     return fitted_feature_config(config, final), report.to_dict(orient="index"), excluded
 
 
+def calibrate_prediction_interval(actual, predicted, coverage=INTERVAL_COVERAGE):
+    """Finite-sample split conformal calibration on original-dollar residuals."""
+    errors = np.abs(np.asarray(actual, dtype=float) - np.asarray(predicted, dtype=float))
+    if errors.ndim != 1 or not errors.size or not np.isfinite(errors).all():
+        raise ValueError("Calibration requires finite, one-dimensional dollar residuals.")
+    # The ceil((n+1)*coverage)-th order statistic is the finite-sample
+    # higher quantile (no interpolation). Never substitute a test-set residual.
+    sample_size = len(errors)
+    rank = math.ceil((sample_size + 1) * coverage)
+    if not 0 < coverage < 1 or rank > sample_size:
+        raise ValueError("Need at least 19 calibration observations for a finite 95% conformal interval; supply more valid-target data.")
+    quantile = float(np.partition(errors, rank - 1)[rank - 1])
+    return {"coverage_level": coverage, "calibration_sample_size": sample_size,
+            "conformal_residual_quantile": quantile, "quantile_rank": rank,
+            "method": "split_conformal_absolute_residual"}
+
+
 def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
                 diagnostics_dir=DIAGNOSTICS_DIR):
     # Resolve once before load_config reads the CSV for predictor discovery.
@@ -252,15 +270,22 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
         raise ValueError("Raw/log comparison requires targets greater than -1 for log1p.")
     print_dataset_summary(features, target)
 
-    # Train/test split: fixed randomness makes this baseline reproducible.
-    x_train, x_test, y_train, y_test = train_test_split(
+    # Preserve the independent 20% test partition. Split the other 80% into
+    # 60% model fitting and 20% calibration; neither holdout fits preprocessing.
+    x_remaining, x_test, y_remaining, y_test = train_test_split(
         features, target, test_size=0.2, random_state=42
     )
+    x_train, x_calibration, y_train, y_calibration = train_test_split(
+        x_remaining, y_remaining, test_size=0.25, random_state=43
+    )
+    if len(y_calibration) < 19:
+        raise ValueError("Need at least 19 calibration observations for a finite 95% conformal interval; supply more valid-target data.")
     fitted_config, missingness_report, excluded = select_predictors(features, x_train, config)
     final_predictors = fitted_config["predictors"]
     numeric_categories = [name for name in fitted_config["categorical_features"]
                           if pd.api.types.is_numeric_dtype(features[name])]
     x_train, x_test = x_train[final_predictors], x_test[final_predictors]
+    x_calibration = x_calibration[final_predictors]
     if y_test.nunique() < 2:
         raise ValueError("Test target is constant; R² is not meaningful. Supply more varied data.")
     empty_features = x_train.columns[x_train.isna().all()].tolist()
@@ -268,13 +293,17 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
         print("Data note: all-missing training predictors retained (numeric zero/categorical __MISSING__ fallback): "
               + ", ".join(empty_features))
 
-    models, results = {}, {}
+    models, results, intervals, interval_evaluations = {}, {}, {}, {}
     print("\nRaw/log comparison: identical predictors and train/test rows")
-    print(f"Training rows: {len(x_train):,} | Testing rows: {len(x_test):,}")
+    print(f"Model-fitting rows: {len(x_train):,} | Calibration rows: {len(x_calibration):,} | Independent test rows: {len(x_test):,}")
     for name, transform in (("raw", "none"), ("log", "log1p")):
         # Model training: only the target transformation differs between models.
         model = build_pipeline({**fitted_config, "target_transform": transform})
         model.fit(x_train, y_train)
+        # predict() already reverses log1p, so calibration is always in dollars.
+        calibration_predictions = model.predict(x_calibration)
+        interval = calibrate_prediction_interval(y_calibration, calibration_predictions)
+        intervals[name] = interval
         # Evaluation: log-model predict() applies expm1 before all metrics/plots.
         predictions = model.predict(x_test)
         if not np.isfinite(predictions).all():
@@ -290,6 +319,17 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
         if not all(math.isfinite(value) for value in metrics.values()):
             raise ValueError(f"{name} evaluation produced nonfinite metrics; model was not saved.")
         models[name], results[name] = model, metrics
+        conformal_error = interval["conformal_residual_quantile"]
+        lower = np.maximum(0, predictions - conformal_error)
+        upper = predictions + conformal_error
+        observed_coverage = float(np.mean((y_test.to_numpy() >= lower) & (y_test.to_numpy() <= upper)))
+        average_width = float(np.maximum(0, upper - lower).mean())
+        interval_evaluations[name] = {"observed_coverage": observed_coverage,
+                                      "average_interval_width": average_width}
+        print(f"{name.title()} 95% split conformal interval: calibration n={interval['calibration_sample_size']:,}, "
+              f"residual quantile=${conformal_error:,.2f}")
+        print(f"Independent test interval coverage: {observed_coverage:.2%}; "
+              f"average prediction interval width (lower clipped at $0): ${average_width:,.2f}")
         save_diagnostic_plots(target, y_test, predictions, diagnostics_dir, name)
 
     # Console comparison: all errors are dollars, and R² uses dollar predictions.
@@ -313,6 +353,12 @@ def train_model(data_path=None, config_path=CONFIG_PATH, model_path=MODEL_PATH,
         "missingness_report": missingness_report,
         "target_min": config["target_min"],
         "target_max": config["target_max"],
+        "prediction_interval": intervals[selected],
+        "prediction_interval_test_evaluation": interval_evaluations[selected],
+        "data_split": {"fitting_sample_size": len(x_train),
+                       "calibration_sample_size": len(x_calibration),
+                       "test_sample_size": len(x_test),
+                       "test_random_state": 42, "calibration_random_state": 43},
     }
     joblib.dump(model, model_path)
     print(f"Saved configured {selected} pipeline to: {model_path}")

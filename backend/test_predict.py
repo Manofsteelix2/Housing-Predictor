@@ -73,6 +73,11 @@ def main():
                        for value in values.values())
         if body.get("predictors_supplied") != supplied or body.get("predictors_total") != len(predictors):
             raise AssertionError(f"{label}: incorrect predictor counts.")
+        interval = body.get("prediction_interval_95", {})
+        q = model.training_metadata_["prediction_interval"]["conformal_residual_quantile"]
+        if (interval.get("lower") != max(0, prediction - q)
+                or interval.get("upper") != prediction + q):
+            raise AssertionError(f"{label}: interval must use the saved conformal residual quantile.")
     numeric = [name for name in config["numeric_features"] if name in predictors]
     if numeric:
         print("\nInvalid provided numeric value:")

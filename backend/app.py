@@ -27,6 +27,17 @@ def create_app():
     model_path = BACKEND_DIR / "model.pkl"
     model = joblib.load(model_path)
     metadata = getattr(model, "training_metadata_", {})
+    interval = metadata.get("prediction_interval")
+    interval_error = "Prediction-interval calibration is missing or invalid. Retrain the model with backend/train_model.py to generate a 95% prediction interval."
+    if isinstance(interval, dict):
+        quantile = interval.get("conformal_residual_quantile")
+        sample_size = interval.get("calibration_sample_size")
+        if (interval.get("method") == "split_conformal_absolute_residual"
+                and interval.get("coverage_level") == 0.95
+                and isinstance(sample_size, int) and not isinstance(sample_size, bool) and sample_size >= 19
+                and isinstance(quantile, Real) and not isinstance(quantile, bool)
+                and math.isfinite(quantile) and quantile >= 0):
+            interval_error = None
     if metadata.get("config") != config:
         raise ValueError("Dataset-derived settings differ from the saved model. Retrain before starting the API.")
     # Advertise the scope of the loaded artifact, not unsaved configuration edits.
@@ -109,7 +120,9 @@ def create_app():
                         if not valid:
                             raise ValueError(f"Options for '{name}' must contain {value_type} values.")
                 features.append({**metadata, "name": name, "value_type": value_type})
-            return jsonify({"features": features, "excluded_predictors": excluded, **target_range})
+            return jsonify({"features": features, "excluded_predictors": excluded, **target_range,
+                            "prediction_interval": interval if interval_error is None else None,
+                            "prediction_interval_error": interval_error})
         except (OSError, ValueError, TypeError, AttributeError) as error:
             return jsonify({"error": f"Cannot load form configuration: {error}"}), 500
 
@@ -120,6 +133,8 @@ def create_app():
 
     @app.post("/predict")
     def predict():
+        if interval_error is not None:
+            return jsonify({"error": interval_error}), 503
         # A JSON object may omit any predictor; the fitted imputers fill gaps.
         if not request.get_data().strip():
             return jsonify({"error": "Request body is empty; provide a JSON object with predictor values."}), 400
@@ -164,8 +179,13 @@ def create_app():
                 return jsonify({"error": "Inputs produced a nonfinite prediction; check the submitted values."}), 400
         except (ValueError, OverflowError):
             return jsonify({"error": "Submitted predictor values could not be processed by the model."}), 400
+        lower = max(0.0, prediction - interval["conformal_residual_quantile"])
+        upper = prediction + interval["conformal_residual_quantile"]
+        if not math.isfinite(upper) or not math.isfinite(lower) or upper < lower:
+            return jsonify({"error": "Inputs produced an invalid prediction interval; check the submitted values."}), 400
         return jsonify({
             "predicted_value": prediction,
+            "prediction_interval_95": {"lower": lower, "upper": upper},
             "predictors_supplied": predictors_supplied,
             "predictors_total": len(predictors),
             "predictors_ignored": [name for name in excluded if name in payload],

@@ -36,7 +36,8 @@ class Element {
 }
 const nodes = new Map();
 for (const id of ["prediction-form", "predict-button", "error-message", "prediction-result",
-  "result-status", "predicted-value", "form-status", "predictor-fields", "model-target-range"]) nodes.set(`#${id}`, new Element());
+  "result-status", "predicted-value", "form-status", "predictor-fields", "model-target-range",
+  "prediction-interval", "prediction-interval-value"]) nodes.set(`#${id}`, new Element());
 function controls(element) {
   return (element.children ?? []).flatMap(child => [child, ...controls(child)]).filter(child => child.name);
 }
@@ -48,6 +49,7 @@ const info = api("GET");
 assert.equal(info.status, 200);
 assert.ok(info.body.features.every(field => field.required === false));
 const requests = [];
+let responseOverride;
 const context = vm.createContext({
   document: { querySelector: selector => nodes.get(selector),
     createElement: () => new Element(), createDocumentFragment: () => new Element() },
@@ -57,7 +59,7 @@ const context = vm.createContext({
     const response = options?.method === "POST" ? (() => {
       const payload = JSON.parse(options.body);
       requests.push(payload);
-      return api("POST", payload);
+      return responseOverride ?? api("POST", payload);
     })() : info;
     return { ok: response.status === 200, status: response.status, json: async () => response.body };
   },
@@ -84,6 +86,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
     assert.equal(requests.length, before + 1, label);
     assert.equal(Object.keys(requests.at(-1)).length, filled, label);
     assert.equal(nodes.get("#predicted-value").hidden, false, label);
+    assert.equal(nodes.get("#prediction-interval").hidden, false, label);
+    assert.match(nodes.get("#prediction-interval-value").textContent, /\$.* – \$/);
     assert.equal(nodes.get("#error-message").hidden, true, label);
     console.log(`Passed: ${label}`);
   }
@@ -98,4 +102,18 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "script.js"), "utf8"), cont
   assert.equal(requests.length, before);
   assert.equal(nodes.get("#error-message").hidden, false);
   console.log("Passed: supplied invalid numeric values blocked (including browser badInput).");
+  numeric.validity.badInput = false;
+  form.listeners.input({ target: numeric });
+  assert.equal(nodes.get("#predicted-value").hidden, true);
+  assert.equal(nodes.get("#prediction-interval").hidden, true);
+  responseOverride = { status: 503, body: { error: "Retrain the model to generate interval calibration." } };
+  await form.listeners.submit({ preventDefault() {} });
+  assert.equal(nodes.get("#prediction-interval").hidden, true);
+  assert.match(nodes.get("#error-message").textContent, /Retrain/);
+  responseOverride = { status: 200, body: { predicted_value: 100 } };
+  await form.listeners.submit({ preventDefault() {} });
+  assert.equal(nodes.get("#predicted-value").hidden, true);
+  assert.equal(nodes.get("#prediction-interval").hidden, true);
+  assert.match(nodes.get("#error-message").textContent, /prediction range/);
+  console.log("Passed: stale ranges cleared, legacy/malformed interval errors displayed.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

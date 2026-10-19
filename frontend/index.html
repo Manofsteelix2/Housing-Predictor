@@ -29,11 +29,17 @@
 
       <aside class="card result-card" aria-labelledby="result-title">
         <p class="eyebrow">Your estimate</p>
-        <h2 id="result-title">Predicted home value</h2>
+        <h2 id="result-title">Estimated Home Value</h2>
         <p id="model-target-range" class="muted" hidden></p>
         <div id="prediction-result" aria-live="polite" aria-atomic="true">
           <p id="result-status" class="muted">Enter any known details, then request your estimate.</p>
           <p id="predicted-value" class="price" hidden></p>
+          <div id="prediction-interval" class="interval" hidden>
+            <h3>95% Prediction Range</h3>
+            <p id="prediction-interval-value" class="interval-value"></p>
+            <p class="interval-note">This estimate is based on broad housing characteristics from the 2023 American Housing Survey and does not incorporate precise local market conditions.</p>
+            <p class="interval-note">The prediction range reflects uncertainty in the model and is calibrated to contain approximately 95% of comparable observed home values.</p>
+          </div>
         </div>
         <p class="result-note">An exploratory estimate from a university analytics project. The current survey codes need further research before use with real property measurements.</p>
       </aside>
